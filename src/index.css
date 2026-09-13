@@ -1,0 +1,44 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --ink: 28 28 34;
+  --subtle: 107 107 118;
+  --line: 232 232 238;
+  --card: 255 255 255;
+  --canvas: 249 249 251;
+  color-scheme: light;
+}
+
+.dark {
+  --ink: 237 237 242;
+  --subtle: 154 154 168;
+  --line: 42 42 52;
+  --card: 24 24 30;
+  --canvas: 15 15 20;
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  background: rgb(var(--canvas));
+  color: rgb(var(--ink));
+}
+
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+.thin-scroll::-webkit-scrollbar { width: 8px; height: 8px; }
+.thin-scroll::-webkit-scrollbar-thumb { background: rgb(var(--line)); border-radius: 8px; }
+
+@keyframes spin-slow { to { transform: rotate(360deg); } }
+.spin-slow { animation: spin-slow 1s linear infinite; }
