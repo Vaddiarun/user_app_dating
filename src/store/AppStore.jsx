@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import {
-  authApi, meApi, walletApi, moderationApi, hostsApi, ApiError,
+  authApi, meApi, walletApi, moderationApi, hostsApi,
   isAuthenticated, onSessionChange, setSession, clearSession,
 } from '../lib/api'
 
@@ -29,6 +29,8 @@ function reducer(state, action) {
   switch (action.type) {
     case 'boot/checking':
       return { ...state, authStatus: 'checking' }
+    case 'boot/error':
+      return { ...state, authStatus: 'error' }
     case 'session/set':
       return {
         ...state,
@@ -120,15 +122,22 @@ export function AppProvider({ children }) {
       }))
       dispatch({ type: 'session/set', user, wallet, notifPrefs, blocked, following })
     } catch (err) {
-      clearSession()
-      dispatch({ type: 'session/clear' })
-      if (!(err instanceof ApiError) || err.status !== 401) {
-        toast('Could not reach the server')
+      // A 401 that couldn't be refreshed already wipes the session inside api.js —
+      // that's a real "you're logged out" case. Anything else (network down, 5xx)
+      // is transient: keep the token and let the user retry instead of forcing them
+      // back through login.
+      if (!isAuthenticated()) {
+        dispatch({ type: 'session/clear' })
+      } else {
+        dispatch({ type: 'boot/error' })
       }
     }
   }).current
 
-  // boot + react to session changes from anywhere (login screen, logout, delete account, forced 401)
+  // boot + react to the session being cleared from anywhere — logout, delete account,
+  // a forced 401 that couldn't be refreshed, or a logout in another browser tab.
+  // (Token refresh also flows through here, but that only ever updates the
+  // accessToken in place — it never clears it — so it's a no-op for this listener.)
   useEffect(() => {
     if (isAuthenticated()) loadProfile()
     const unsub = onSessionChange((s) => {
@@ -138,6 +147,7 @@ export function AppProvider({ children }) {
   }, []) // eslint-disable-line
 
   const actions = useMemo(() => ({
+    retryBoot: loadProfile,
     async login({ accessToken, refreshToken, userId }) {
       setSession({ accessToken, refreshToken, userId })
       await loadProfile()

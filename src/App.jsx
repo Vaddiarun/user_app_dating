@@ -1,6 +1,5 @@
 import { Routes, Route, Outlet, Navigate, useLocation } from 'react-router-dom'
 import { useEffect } from 'react'
-import { Loader2, Sparkles } from 'lucide-react'
 import AppShell from './components/AppShell'
 import { useApp } from './store/AppStore'
 import { ToastHost } from './components/ui'
@@ -20,7 +19,7 @@ import {
   Languages, NotificationSettings, About, Support, Terms, Grievance, DeleteAccount,
 } from './pages/Settings'
 import { CallEnded, CallSummary, GiftSent, BlockFlow, ReportFlow } from './pages/Outcomes'
-import { Splash, Phone, Otp, ProfileSetup, AccessConfirmed } from './pages/Auth'
+import { Splash, Phone, Otp, ProfileSetup, AccessConfirmed, BootScreen } from './pages/Auth'
 import { NotFound, Offline, SessionExpired, AccountRestricted, Logout } from './pages/Errors'
 
 function Shell() {
@@ -36,27 +35,18 @@ function Shell() {
   )
 }
 
-function BootSplash() {
-  return (
-    <div className="grid min-h-screen place-items-center bg-gradient-to-b from-[#2b1a55] via-[#160f2e] to-[#0c0a18]">
-      <div className="flex flex-col items-center text-white">
-        <span className="grid h-14 w-14 place-items-center rounded-2xl bg-brand"><Sparkles size={24} /></span>
-        <Loader2 size={22} className="mt-5 animate-spin text-white/70" />
-      </div>
-    </div>
-  )
-}
-
 function RequireAuth() {
-  const { state } = useApp()
-  if (state.authStatus === 'checking') return <BootSplash />
+  const { state, actions } = useApp()
+  if (state.authStatus === 'checking') return <BootScreen />
+  if (state.authStatus === 'error') return <BootScreen error="Could not reach the server. Check your connection." onRetry={actions.retryBoot} />
   if (state.authStatus === 'guest') return <Navigate to="/onboarding" replace />
   return <Outlet />
 }
 
 function RequireGuest() {
-  const { state } = useApp()
-  if (state.authStatus === 'checking') return <BootSplash />
+  const { state, actions } = useApp()
+  if (state.authStatus === 'checking') return <BootScreen />
+  if (state.authStatus === 'error') return <BootScreen error="Could not reach the server. Check your connection." onRetry={actions.retryBoot} />
   if (state.authStatus === 'authenticated') return <Navigate to="/" replace />
   return <Outlet />
 }

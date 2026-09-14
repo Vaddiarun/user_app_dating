@@ -62,31 +62,25 @@ export default function AppShell({ children }) {
           <SideLink to="/vip" label="VIP" icon={Sparkles} />
           <SideLink to="/profile" label="Settings" icon={Settings} />
         </nav>
-        <button
-          onClick={toggleTheme}
-          className="flex items-center gap-3 rounded-xl px-3 py-2 text-[14px] font-medium text-subtle hover:bg-gray-100 dark:hover:bg-white/5"
-        >
-          <Moon size={18} className="hidden dark:block" />
-          <Sun size={18} className="dark:hidden" />
-          Theme
-        </button>
+        <ThemeButton onClick={toggleTheme} />
       </aside>
 
       {/* Mobile drawer */}
       {open && (
         <div className="fixed inset-0 z-50 lg:hidden">
           <div className="absolute inset-0 bg-black/50" onClick={() => setOpen(false)} />
-          <div className="absolute left-0 top-0 h-full w-64 bg-card p-4">
+          <div className="absolute left-0 top-0 flex h-full w-64 flex-col bg-card p-4">
             <div className="flex items-center justify-between">
               <Brand />
               <button onClick={() => setOpen(false)}><X size={20} /></button>
             </div>
-            <nav className="mt-6 flex flex-col gap-1" onClick={() => setOpen(false)}>
+            <nav className="mt-6 flex flex-1 flex-col gap-1" onClick={() => setOpen(false)}>
               {NAV.map((n) => <SideLink key={n.to} {...n} badge={n.badgeKey ? chatBadge : 0} />)}
               <div className="my-3 h-px bg-line" />
               <SideLink to="/vip" label="VIP" icon={Sparkles} />
               <SideLink to="/profile" label="Settings" icon={Settings} />
             </nav>
+            <ThemeButton onClick={toggleTheme} />
           </div>
         </div>
       )}
@@ -164,6 +158,19 @@ function Brand() {
       </span>
       <span className="text-[16px] font-extrabold tracking-tight text-ink">Vibe</span>
     </NavLink>
+  )
+}
+
+function ThemeButton({ onClick }) {
+  return (
+    <button
+      onClick={onClick}
+      className="flex items-center gap-3 rounded-xl px-3 py-2 text-[14px] font-medium text-subtle hover:bg-gray-100 dark:hover:bg-white/5"
+    >
+      <Moon size={18} className="hidden dark:block" />
+      <Sun size={18} className="dark:hidden" />
+      Theme
+    </button>
   )
 }
 

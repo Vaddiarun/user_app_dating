@@ -62,18 +62,62 @@ function ErrorText({ error }) {
   return <p className="mt-2 text-[13px] font-medium text-rose-500">{error}</p>
 }
 
+const AUTO_ADVANCE_MS = 1600
+
+function BrandMark() {
+  return (
+    <div className="text-center text-white">
+      <span className="mx-auto grid h-16 w-16 place-items-center rounded-2xl bg-brand animate-splashPop">
+        <Sparkles size={28} />
+      </span>
+      <h1 className="mt-4 animate-splashFadeUp text-[28px] font-extrabold tracking-tight" style={{ animationDelay: '150ms' }}>Vibe</h1>
+      <p className="mt-1 animate-splashFadeUp text-[14px] text-white/60" style={{ animationDelay: '300ms' }}>Real conversations with creators</p>
+    </div>
+  )
+}
+
+// The branded boot screen — shown on cold start (while the stored token, if any,
+// is verified against GET /me) and, for a brand-new guest, as the entry splash
+// that auto-advances into the login flow once its entrance animation has played.
+export function BootScreen({ error, onRetry }) {
+  return (
+    <div className="relative grid min-h-screen place-items-center bg-gradient-to-b from-[#3a2568] via-[#1a1236] to-[#0b0814] p-6">
+      <BrandMark />
+      <div className="absolute inset-x-0 bottom-12 mx-auto w-full max-w-md px-6 text-center">
+        {error ? (
+          <div className="animate-fadeIn" style={{ animationDelay: '200ms' }}>
+            <p className="text-[13px] text-white/70">{error}</p>
+            <button
+              onClick={onRetry}
+              className="mt-3 rounded-xl bg-white/15 px-5 py-2.5 text-[14px] font-semibold text-white hover:bg-white/20"
+            >
+              Retry
+            </button>
+          </div>
+        ) : (
+          <Loader2 size={20} className="mx-auto animate-spin text-white/50" />
+        )}
+      </div>
+    </div>
+  )
+}
+
 export function Splash() {
   const nav = useNavigate()
+
+  // Plays the entrance animation, then moves on to the phone step by itself —
+  // tapping "Get started" just skips the wait.
+  useEffect(() => {
+    const t = setTimeout(() => nav('/onboarding/phone'), AUTO_ADVANCE_MS)
+    return () => clearTimeout(t)
+  }, [nav])
+
   return (
-    <div className="relative grid min-h-screen place-items-end bg-gradient-to-b from-[#3a2568] via-[#1a1236] to-[#0b0814] p-6">
+    <div className="relative flex min-h-screen flex-col items-center justify-end bg-gradient-to-b from-[#3a2568] via-[#1a1236] to-[#0b0814] p-6">
       <div className="pointer-events-none absolute inset-0 grid place-items-center">
-        <div className="text-center text-white">
-          <span className="mx-auto grid h-16 w-16 place-items-center rounded-2xl bg-brand"><Sparkles size={28} /></span>
-          <h1 className="mt-4 text-[28px] font-extrabold tracking-tight">Vibe</h1>
-          <p className="mt-1 text-[14px] text-white/60">Real conversations with creators</p>
-        </div>
+        <BrandMark />
       </div>
-      <div className="w-full max-w-md">
+      <div className="w-full max-w-md animate-fadeIn" style={{ animationDelay: '500ms' }}>
         <Button className="w-full py-4" onClick={() => nav('/onboarding/phone')}>Get started</Button>
       </div>
     </div>
@@ -231,8 +275,8 @@ export function Otp() {
 export function ProfileSetup() {
   const nav = useNavigate()
   const { state, actions } = useApp()
-  const [name, setName] = useState(state.user?.name || '')
-  const [dob, setDob] = useState(state.user?.dob || '')
+  const [name, setName] = useState('')
+  const [dob, setDob] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 

@@ -6,7 +6,6 @@ import { Avatar, GradientBox, Button, EmptyState } from '../components/ui'
 import { hostsApi } from '../lib/api'
 import { normalizeHostList } from '../lib/normalize'
 
-const RECENT = ['Hindi', 'English', 'Music', 'Dance']
 const G = [['#e6b980', '#c9822b'], ['#8f7fe0', '#5b28d6'], ['#7fd6a8', '#3f9878'], ['#d68f9b', '#9b3f5f']]
 
 export default function Search() {
@@ -51,17 +50,8 @@ export default function Search() {
         {q && !loading && <button onClick={() => setQ('')}><X size={16} className="text-subtle" /></button>}
       </div>
 
-      {!shown && (
+      {!shown && suggested.length > 0 && (
         <>
-          <Section title="Try searching">
-            <div className="flex flex-wrap gap-2">
-              {RECENT.map((r) => (
-                <button key={r} onClick={() => setQ(r)} className="rounded-full bg-gray-100 px-3 py-1.5 text-[13px] font-medium text-ink dark:bg-white/10">
-                  {r}
-                </button>
-              ))}
-            </div>
-          </Section>
           <Section title="Suggested">
             <div className="divide-y divide-line rounded-2xl border border-line bg-card">
               {suggested.map((c) => (

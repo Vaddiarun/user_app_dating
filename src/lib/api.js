@@ -42,6 +42,18 @@ export function clearSession() {
   saveSession({ accessToken: null, refreshToken: null, userId: null })
 }
 
+// Keep the in-memory session in sync across tabs — e.g. logging out (or a token
+// refresh) in one tab should be reflected in every other open tab, not just on
+// its next failed request. `storage` only fires in tabs OTHER than the one that
+// wrote localStorage, so this never loops back on itself.
+if (typeof window !== 'undefined') {
+  window.addEventListener('storage', (e) => {
+    if (e.key !== SESSION_KEY) return
+    session = e.newValue ? JSON.parse(e.newValue) : { accessToken: null, refreshToken: null, userId: null }
+    listeners.forEach((l) => l(session))
+  })
+}
+
 export class ApiError extends Error {
   constructor(message, status, data) {
     super(message)
