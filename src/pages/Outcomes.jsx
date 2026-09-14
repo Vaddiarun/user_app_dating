@@ -1,7 +1,7 @@
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import {
-  AlertTriangle, Plus, MessageSquare, Check, Ban, ShieldAlert, Flag, Loader2, Star,
+  AlertTriangle, Plus, MessageSquare, Check, Ban, ShieldAlert, Flag, Loader2, Star, Gift,
 } from 'lucide-react'
 import { useApp } from '../store/AppStore'
 import { Avatar, Button, Card } from '../components/ui'
@@ -111,17 +111,16 @@ export function GiftSent() {
   const [sp] = useSearchParams()
   const nav = useNavigate()
   const c = useHost(id)
-  const emoji = sp.get('emoji') || '🎁'
   const giftName = sp.get('name') || 'gift'
   return (
     <Centered>
-      <Burst><Check size={26} /></Burst>
-      <h1 className="mt-4 text-[20px] font-bold text-ink">{emoji} sent to {c?.name || 'creator'}</h1>
+      <Burst><Gift size={24} /></Burst>
+      <h1 className="mt-4 text-[20px] font-bold text-ink">{giftName} sent to {c?.name || 'creator'}</h1>
       <p className="mt-1 text-[13px] text-subtle">Deducted from your balance</p>
       <Card className="mt-5 flex w-full items-center gap-3 p-3.5 text-left">
         <Avatar id={id} size={36} ring ringColor="#e0a0a0" />
         <p className="flex-1 text-[13px] text-ink">{c?.name || 'They'} were sent your {giftName}.</p>
-        <span className="text-xl">{emoji}</span>
+        <Gift size={20} className="text-brand" />
       </Card>
       <Button variant="outline" className="mt-3 w-full py-3" onClick={() => nav(`/chat/${id}`)}>Open conversation</Button>
       <button onClick={() => nav('/')} className="mt-3 text-[14px] font-semibold text-brand">Back to home</button>

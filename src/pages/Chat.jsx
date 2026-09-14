@@ -119,7 +119,7 @@ export default function Chat() {
 
 function Conversation({ hostId, conversationId: initialConvId }) {
   const nav = useNavigate()
-  const { state, toast } = useApp()
+  const { state, actions, toast } = useApp()
   const [c, setC] = useState(null)
   const [conversationId, setConversationId] = useState(initialConvId || null)
   const [messages, setMessages] = useState([])
@@ -179,10 +179,11 @@ function Conversation({ hostId, conversationId: initialConvId }) {
   }
 
   const sendGift = async (g) => {
-    if (!state.wallet || state.wallet.displayBeans < g.price) { toast('Not enough beans'); throw new Error('insufficient') }
+    if (!state.wallet || state.wallet.balancePaise < g.pricePaise) { toast('Not enough balance'); throw new Error('insufficient') }
     await giftsApi.send(hostId, g.id, 'chat', conversationId)
+    await actions.refreshWallet()
     setGift(false)
-    nav(`/gift-sent/${hostId}?g=${g.id}&name=${encodeURIComponent(g.name)}&emoji=${encodeURIComponent(g.emoji)}`)
+    nav(`/gift-sent/${hostId}?name=${encodeURIComponent(g.name)}`)
   }
 
   return (
@@ -249,7 +250,7 @@ function Conversation({ hostId, conversationId: initialConvId }) {
 
       {gift && (
         <GiftPicker
-          balance={state.wallet?.displayBeans ?? 0}
+          balance={state.wallet?.balancePaise ?? 0}
           onClose={() => setGift(false)}
           onSend={sendGift}
         />

@@ -13,21 +13,28 @@ npm run dev       # http://localhost:5173
 npm run build && npm run preview
 ```
 
-The app expects the backend from the Postman collection at `http://localhost:4000`
-by default. Point it elsewhere with a `.env` file:
-
-```
-VITE_API_BASE_URL=http://localhost:4000
-```
+The app talks to the deployed backend at `https://triloapp-plan.onrender.com` by
+default (set in `.env`). It's a Render free-tier instance, so the first request
+after a period of inactivity can take 30–60s to cold-start. Point the app at a
+different backend (e.g. a local instance from the Postman collection) by editing
+`.env` or setting `VITE_API_BASE_URL` in your shell before running `npm run dev`.
 
 ## Backend integration
 
 All data — auth, profile, hosts, wallet, calls, chat, gifts, live broadcasts,
 moderation, grievances — comes from the real API via `src/lib/api.js`, which
 mirrors every request in the Postman collection (base URL, auth headers, one
-silent access-token refresh on a 401). `src/lib/normalize.js` defensively
-normalizes a couple of plausible field-name variants for hosts/gifts, since the
-collection documents most host fields in prose rather than an exact schema.
+silent access-token refresh on a 401). `src/lib/normalize.js` normalizes the
+handful of fields (host `rating`, gift pricing, etc.) that differ from what the
+Postman collection describes in prose — verified directly against the live
+`https://triloapp-plan.onrender.com` backend, not guessed.
+
+**Calls are not real media yet.** `POST /calls` returns a real Agora
+`channelName` + `agoraToken` for RTC signaling, but `CallRoom.jsx` doesn't join
+Agora at all — it fakes the "connected" UI state locally after ~2s and never
+actually opens audio/video. That means the backend's own call/billing state
+machine never sees the call as truly connected (it just sits in `ringing`), so
+`Calls` won't function end-to-end until the Agora Web SDK is wired in.
 
 A few screens have no backing endpoint in the collection and are called out in
 the UI rather than faked:

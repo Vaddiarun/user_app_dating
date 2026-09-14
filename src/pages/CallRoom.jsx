@@ -5,7 +5,7 @@ import {
 } from 'lucide-react'
 import { useApp } from '../store/AppStore'
 import { Avatar, Button } from '../components/ui'
-import { beans, clock } from '../lib/format'
+import { clock } from '../lib/format'
 import GiftPicker from '../components/GiftPicker'
 import { callsApi, hostsApi, giftsApi, ApiError } from '../lib/api'
 import { normalizeHost } from '../lib/normalize'
@@ -32,6 +32,8 @@ export default function CallRoom() {
   const endedRef = useRef(false)
   const navRef = useRef(nav)
   navRef.current = nav
+  const secondsRef = useRef(0)
+  secondsRef.current = seconds
 
   // set up: fetch host (for name/avatar/rate) + initiate the call
   useEffect(() => {
@@ -62,9 +64,10 @@ export default function CallRoom() {
     try {
       const res = await callsApi.end(call.callId)
       actions.refreshWallet().catch(() => {})
-      const d = res.durationSeconds ?? res.duration ?? seconds
-      const b = res.spentBeans ?? res.beans ?? ''
-      const q = `?d=${d}${b !== '' ? `&b=${b}` : ''}&cid=${call.callId}`
+      // The end-call response carries totalBeans/totalAmountPaise but no duration
+      // field — the client's own elapsed timer is the only source for that.
+      const b = res.totalBeans ?? ''
+      const q = `?d=${seconds}${b !== '' ? `&b=${b}` : ''}&cid=${call.callId}`
       const dest = reason === 'balance' ? `/call-ended/${hostId}${q}` : reason === 'addbalance' ? '/add-balance' : `/call-summary/${hostId}${q}`
       navRef.current(dest, { replace: true })
     } catch {
@@ -90,9 +93,8 @@ export default function CallRoom() {
         const st = (status.status || '').toLowerCase()
         if (st && st !== 'active' && st !== 'ringing' && !endedRef.current) {
           endedRef.current = true
-          const d = status.durationSeconds ?? status.duration ?? seconds
-          const b = status.spentBeans ?? status.beans ?? ''
-          const q = `?d=${d}${b !== '' ? `&b=${b}` : ''}&cid=${call.callId}`
+          const b = status.totalBeans ?? ''
+          const q = `?d=${secondsRef.current}${b !== '' ? `&b=${b}` : ''}&cid=${call.callId}`
           navRef.current(st === 'missed' || wallet?.balancePaise <= 0 ? `/call-ended/${hostId}${q}` : `/call-summary/${hostId}${q}`, { replace: true })
         }
       } catch {}
@@ -203,14 +205,14 @@ export default function CallRoom() {
 
       {gift && (
         <GiftPicker
-          balance={state.wallet?.displayBeans ?? 0}
+          balance={state.wallet?.balancePaise ?? 0}
           onClose={() => setGift(false)}
           onSend={async (g) => {
             await giftsApi.send(hostId, g.id, 'call', call?.callId)
             await actions.refreshWallet()
             setGift(false)
-            toast(`${g.emoji} Sent ${g.name}`)
-            setChatLog((l) => [...l, { text: `Sent a ${g.name} ${g.emoji}` }])
+            toast(`Sent ${g.name}`)
+            setChatLog((l) => [...l, { text: `Sent a ${g.name}` }])
           }}
         />
       )}

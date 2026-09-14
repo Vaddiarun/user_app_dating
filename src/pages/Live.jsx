@@ -71,7 +71,7 @@ export default function Live() {
 export function LiveRoom() {
   const { id } = useParams()
   const nav = useNavigate()
-  const { state, toast } = useApp()
+  const { state, actions, toast } = useApp()
   const [room, setRoom] = useState(null)
   const [msgs, setMsgs] = useState([])
   const [text, setText] = useState('')
@@ -159,14 +159,15 @@ export function LiveRoom() {
 
       {gift && (
         <GiftPicker
-          balance={state.wallet?.displayBeans ?? 0}
+          balance={state.wallet?.balancePaise ?? 0}
           onClose={() => setGift(false)}
           onSend={async (g) => {
-            if (!state.wallet || state.wallet.displayBeans < g.price) { toast('Not enough beans'); throw new Error('insufficient') }
+            if (!state.wallet || state.wallet.balancePaise < g.pricePaise) { toast('Not enough balance'); throw new Error('insufficient') }
             await giftsApi.send(room?.hostId || id, g.id, 'live', id)
+            await actions.refreshWallet()
             setGift(false)
-            setMsgs((m) => [...m, { id: Date.now(), n: state.user?.name || 'You', t: `sent a ${g.name} ${g.emoji}` }])
-            toast(`${g.emoji} Sent ${g.name}`)
+            setMsgs((m) => [...m, { id: Date.now(), n: state.user?.name || 'You', t: `sent a ${g.name}` }])
+            toast(`Sent ${g.name}`)
           }}
         />
       )}

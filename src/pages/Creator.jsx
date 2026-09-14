@@ -65,11 +65,11 @@ export default function Creator() {
   }
 
   const sendGift = async (g) => {
-    if (!state.wallet || state.wallet.displayBeans < g.price) { toast('Not enough beans'); throw new Error('insufficient') }
+    if (!state.wallet || state.wallet.balancePaise < g.pricePaise) { toast('Not enough balance'); throw new Error('insufficient') }
     await giftsApi.send(c.id, g.id, 'profile')
     await actions.refreshWallet()
     setGift(false)
-    nav(`/gift-sent/${c.id}?g=${g.id}&name=${encodeURIComponent(g.name)}&emoji=${encodeURIComponent(g.emoji)}`)
+    nav(`/gift-sent/${c.id}?name=${encodeURIComponent(g.name)}`)
   }
 
   const startChat = async () => {
@@ -180,7 +180,7 @@ export default function Creator() {
 
       {gift && (
         <GiftPicker
-          balance={state.wallet?.displayBeans ?? 0}
+          balance={state.wallet?.balancePaise ?? 0}
           onClose={() => setGift(false)}
           onSend={sendGift}
         />
