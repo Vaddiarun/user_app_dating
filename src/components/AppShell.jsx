@@ -5,7 +5,7 @@ import {
 } from 'lucide-react'
 import { useApp } from '../store/AppStore'
 import { Avatar } from './ui'
-import { beans } from '../lib/format'
+import { beans, userName, userHandle } from '../lib/format'
 import { chatApi } from '../lib/api'
 
 const NAV = [
@@ -62,7 +62,21 @@ export default function AppShell({ children }) {
           <SideLink to="/vip" label="VIP" icon={Sparkles} />
           <SideLink to="/profile" label="Settings" icon={Settings} />
         </nav>
-        <ThemeButton onClick={toggleTheme} />
+        <div className="mt-auto pt-3">
+          <button
+            onClick={() => nav('/profile')}
+            className="flex w-full items-center gap-3 rounded-xl p-2 text-left hover:bg-gray-100 dark:hover:bg-white/5 transition group"
+            title="Go to Profile"
+          >
+            <Avatar id={state.user?.id || 'me'} size={38} ring ringColor="#5b28d6" />
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-[13px] font-bold text-ink group-hover:text-brand">{userName(state.user)}</p>
+              <p className="truncate text-[11px] text-subtle">{userHandle(state.user) || 'View profile'}</p>
+            </div>
+          </button>
+          <div className="my-2 h-px bg-line" />
+          <ThemeButton onClick={toggleTheme} />
+        </div>
       </aside>
 
       {/* Mobile drawer */}
@@ -80,7 +94,20 @@ export default function AppShell({ children }) {
               <SideLink to="/vip" label="VIP" icon={Sparkles} />
               <SideLink to="/profile" label="Settings" icon={Settings} />
             </nav>
-            <ThemeButton onClick={toggleTheme} />
+            <div className="mt-auto pt-3">
+              <button
+                onClick={() => { setOpen(false); nav('/profile') }}
+                className="flex w-full items-center gap-3 rounded-xl p-2 text-left hover:bg-gray-100 dark:hover:bg-white/5 transition group"
+              >
+                <Avatar id={state.user?.id || 'me'} size={38} ring ringColor="#5b28d6" />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[13px] font-bold text-ink group-hover:text-brand">{userName(state.user)}</p>
+                  <p className="truncate text-[11px] text-subtle">{userHandle(state.user) || 'View profile'}</p>
+                </div>
+              </button>
+              <div className="my-2 h-px bg-line" />
+              <ThemeButton onClick={toggleTheme} />
+            </div>
           </div>
         </div>
       )}
@@ -115,8 +142,20 @@ export default function AppShell({ children }) {
               </span>
             )}
           </button>
-          <button onClick={() => nav('/profile')}>
-            <Avatar id={state.user?.id || 'me'} size={34} ring ringColor="#5b28d6" />
+          <button
+            onClick={() => nav('/profile')}
+            className="flex items-center gap-2 rounded-xl border border-line bg-canvas/60 px-2 py-1.5 hover:border-brand-200 hover:bg-gray-50 dark:hover:bg-white/5 transition group"
+            title="View profile"
+          >
+            <Avatar id={state.user?.id || 'me'} size={32} ring ringColor="#5b28d6" />
+            <div className="hidden sm:flex flex-col text-left pr-1">
+              <span className="text-[13px] font-bold text-ink leading-tight truncate max-w-[120px] group-hover:text-brand">
+                {userName(state.user)}
+              </span>
+              <span className="text-[11px] text-subtle leading-tight">
+                {userHandle(state.user) || 'Profile'}
+              </span>
+            </div>
           </button>
         </header>
 

@@ -5,6 +5,7 @@ import { Button } from '../components/ui'
 import { Avatar } from '../components/ui'
 import { useApp } from '../store/AppStore'
 import { authApi, meApi, ApiError } from '../lib/api'
+import { getRestriction } from '../lib/captureStrikes'
 
 const STEP_LABELS = ['Phone', 'Verify', 'Profile', 'Access']
 
@@ -227,6 +228,11 @@ export function Otp() {
     setError('')
     try {
       const res = await authApi.verifyOtp(phone, code, 'user')
+      const restriction = getRestriction(res.user?.id)
+      if (restriction) {
+        nav('/account-restricted', { state: { caseRef: restriction.caseRef } })
+        return
+      }
       const user = await actions.login({ accessToken: res.accessToken, refreshToken: res.refreshToken, userId: res.user?.id })
       // Returning users who already finished onboarding shouldn't be walked
       // through "set up profile" / "access confirmed" on every single login.
@@ -307,7 +313,9 @@ export function ProfileSetup() {
     setBusy(true)
     setError('')
     try {
-      await meApi.update({ name: name.trim(), dob })
+      const cleanName = name.trim()
+      await meApi.update({ name: cleanName, dob })
+      actions.patchUserLocal({ name: cleanName, dob })
       await actions.refreshUser()
       nav('/onboarding/access')
     } catch (err) {
@@ -323,10 +331,11 @@ export function ProfileSetup() {
 
       <div className="mt-6 flex flex-col items-center">
         <div className="relative">
-          <Avatar id={state.user?.id || 'me'} size={84} />
+          <Avatar id={state.user?.id || 'me'} size={84} ring ringColor="#5b28d6" />
           <span className="absolute bottom-0 right-0 grid h-7 w-7 place-items-center rounded-full border-2 border-card bg-brand text-white"><Camera size={13} /></span>
         </div>
-        <p className="mt-2 text-[13px] text-subtle">Add a profile photo</p>
+        <h2 className="mt-2.5 text-[17px] font-bold text-ink">{name.trim() || 'Your Name'}</h2>
+        <p className="text-[12px] text-subtle">Choose your public display name</p>
       </div>
       <label className="mt-5 block text-[13px] font-semibold text-ink">Display name</label>
       <input value={name} onChange={(e) => setName(e.target.value)} className="mt-2 w-full rounded-xl border border-line bg-canvas px-4 py-3 text-[15px] outline-none" />

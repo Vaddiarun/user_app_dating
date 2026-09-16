@@ -36,3 +36,25 @@ export function compact(n) {
   if (n >= 1000) return `${(n / 1000).toFixed(1).replace(/\.0$/, '')}k`
   return String(n)
 }
+
+export function userName(user) {
+  if (!user) return 'User'
+  if (typeof user === 'string') return user.trim() || 'User'
+  const name = user.name?.trim()
+  if (name) return name
+  const username = user.username?.trim()
+  if (username) return username
+  if (user.phone) {
+    const digits = String(user.phone).replace(/\D/g, '')
+    return digits ? `User ${digits.slice(-4)}` : 'User'
+  }
+  return 'User'
+}
+
+export function userHandle(user) {
+  if (!user) return ''
+  if (user.username?.trim()) return `@${user.username.trim()}`
+  if (user.phone) return user.phone
+  return ''
+}
+

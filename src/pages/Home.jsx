@@ -5,6 +5,7 @@ import { useApp } from '../store/AppStore'
 import { Avatar, GradientBox, Chip, EmptyState, Button, Modal, Skeleton } from '../components/ui'
 import { hostsApi, meApi, ApiError } from '../lib/api'
 import { normalizeHostList } from '../lib/normalize'
+import { userName } from '../lib/format'
 
 const TABS = ['All', 'New', 'Popular', 'Following']
 const CARD_G = [
@@ -50,7 +51,12 @@ export default function Home() {
   return (
     <div className="mx-auto max-w-6xl">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <h1 className="text-[22px] font-extrabold tracking-tight text-ink">Discover creators</h1>
+        <div>
+          <h1 className="text-[22px] font-extrabold tracking-tight text-ink">
+            Hello, {userName(state.user)} 👋
+          </h1>
+          <p className="mt-0.5 text-[13px] text-subtle">Discover creators and start real conversations</p>
+        </div>
         <div className="no-scrollbar -mx-4 flex gap-2 overflow-x-auto px-4 sm:mx-0 sm:px-0">
           {TABS.map((t) => <Chip key={t} active={tab === t} onClick={() => setTab(t)}>{t}</Chip>)}
         </div>
