@@ -3,6 +3,7 @@ import {
   authApi, meApi, walletApi, moderationApi, hostsApi,
   isAuthenticated, onSessionChange, setSession, clearSession,
 } from '../lib/api'
+import { connectSocket, disconnectSocket } from '../lib/socket'
 
 const NOTIF_KEY = 'vibe-notifications-v1'
 const uid = () => Math.random().toString(36).slice(2, 10)
@@ -145,6 +146,14 @@ export function AppProvider({ children }) {
     })
     return unsub
   }, []) // eslint-disable-line
+
+  // Realtime connection follows auth status, same as the host app — connected
+  // for call:accepted/call:ended (CallRoom.jsx) and available for future
+  // realtime features (gifts, notifications) without another wiring pass.
+  useEffect(() => {
+    if (state.authStatus === 'authenticated') connectSocket()
+    else disconnectSocket()
+  }, [state.authStatus])
 
   const actions = useMemo(() => ({
     retryBoot: loadProfile,

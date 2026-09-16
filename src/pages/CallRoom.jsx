@@ -9,8 +9,13 @@ import { clock } from '../lib/format'
 import GiftPicker from '../components/GiftPicker'
 import { callsApi, hostsApi, giftsApi, ApiError } from '../lib/api'
 import { normalizeHost } from '../lib/normalize'
+import { joinAndPublish, leaveChannel } from '../lib/agora'
+import { getSocket, onSocketEvent } from '../lib/socket'
 
 const POLL_MS = 5000
+// The backend's real call_status enum (calls.status) — ringing/ongoing are
+// in-progress, everything else is terminal.
+const TERMINAL_CALL_STATUSES = ['completed', 'rejected', 'missed', 'failed']
 
 export default function CallRoom() {
   const { id: hostId } = useParams()
@@ -20,22 +25,32 @@ export default function CallRoom() {
   const { state, actions, toast } = useApp()
 
   const [c, setC] = useState(null)
-  const [call, setCall] = useState(null) // { callId, ratePaise }
-  const [phase, setPhase] = useState('connecting') // connecting | active | ended | error
+  const [call, setCall] = useState(null) // { callId, ratePaise, channelName, agoraToken }
+  const [phase, setPhase] = useState('connecting') // connecting | active | error
   const [error, setError] = useState('')
   const [seconds, setSeconds] = useState(0)
   const [muted, setMuted] = useState(false)
   const [showChat, setShowChat] = useState(false)
   const [gift, setGift] = useState(false)
   const [chatLog, setChatLog] = useState([])
+  const [rtcErr, setRtcErr] = useState('')
+  const [remoteJoined, setRemoteJoined] = useState(false)
 
   const endedRef = useRef(false)
+  const acceptedRef = useRef(false)
   const navRef = useRef(nav)
   navRef.current = nav
   const secondsRef = useRef(0)
   secondsRef.current = seconds
+  const callRef = useRef(null)
+  callRef.current = call
+  const sessionRef = useRef(null)
+  const remoteVideoRef = useRef(null)
+  const localVideoRef = useRef(null)
 
-  // set up: fetch host (for name/avatar/rate) + initiate the call
+  // set up: fetch host (for name/avatar/rate) + initiate the call. The backend
+  // hands back this user's own Agora channel/token right here (POST /calls) —
+  // there's nothing more to fetch once the host accepts, just a join to do.
   useEffect(() => {
     let alive = true
     Promise.all([hostsApi.get(hostId).catch(() => null), callsApi.initiate(hostId, mode === 'audio' ? 'voice' : mode)])
@@ -46,9 +61,9 @@ export default function CallRoom() {
         setCall({
           callId: callRes.callId || callRes.id,
           ratePaise: callRes.ratePerMinutePaise ?? callRes.ratePaise ?? host?.ratePaise ?? 0,
+          channelName: callRes.channelName,
+          agoraToken: callRes.agoraToken,
         })
-        const t = setTimeout(() => alive && setPhase('active'), 1800)
-        return () => clearTimeout(t)
       })
       .catch((err) => {
         if (!alive) return
@@ -58,9 +73,30 @@ export default function CallRoom() {
     return () => { alive = false }
   }, [hostId, mode]) // eslint-disable-line
 
+  const markAccepted = () => {
+    if (acceptedRef.current) return
+    acceptedRef.current = true
+    setPhase('active')
+  }
+
+  const handleServerEnd = (status, totalBeans) => {
+    if (endedRef.current) return
+    endedRef.current = true
+    if (sessionRef.current) { leaveChannel(sessionRef.current); sessionRef.current = null }
+    const st = (status || '').toLowerCase()
+    const b = totalBeans ?? ''
+    const cid = callRef.current?.callId
+    const q = `?d=${secondsRef.current}${b !== '' ? `&b=${b}` : ''}${cid ? `&cid=${cid}` : ''}`
+    // missed/rejected/failed means the call never really connected — same
+    // "didn't go through" outcome screen as a ringing timeout; only a call
+    // that actually ran (completed) gets the rate-this-call summary.
+    navRef.current(st === 'completed' ? `/call-summary/${hostId}${q}` : `/call-ended/${hostId}${q}`, { replace: true })
+  }
+
   const finish = async (reason) => {
     if (endedRef.current || !call?.callId) return
     endedRef.current = true
+    if (sessionRef.current) { await leaveChannel(sessionRef.current); sessionRef.current = null }
     try {
       const res = await callsApi.end(call.callId)
       actions.refreshWallet().catch(() => {})
@@ -77,6 +113,57 @@ export default function CallRoom() {
   const finishRef = useRef(finish)
   finishRef.current = finish
 
+  // Realtime: the host accepting/ending the call reaches us near-instantly over the
+  // socket (same call:accepted/call:ended events RealtimeBridge uses on the host app).
+  // Scoped to this callId so a stale listener from a previous call can't fire here.
+  useEffect(() => {
+    if (!call?.callId) return
+    let cancelled = false
+    const unsubs = []
+    const attach = () => {
+      const socket = getSocket()
+      if (!socket) {
+        if (!cancelled) setTimeout(attach, 300)
+        return
+      }
+      unsubs.push(onSocketEvent('call:accepted', (payload) => {
+        if (payload?.callId !== call.callId) return
+        markAccepted()
+      }))
+      unsubs.push(onSocketEvent('call:ended', (payload) => {
+        if (payload?.callId !== call.callId) return
+        handleServerEnd(payload?.status, payload?.totalBeans)
+      }))
+    }
+    attach()
+    return () => {
+      cancelled = true
+      unsubs.forEach((u) => u())
+    }
+  }, [call?.callId]) // eslint-disable-line
+
+  // Poll fallback (in case a socket event is missed) — also doubles as the only
+  // way we'd detect acceptance if the socket never connects. Runs continuously
+  // once the call exists, not just once "active", so a reject/timeout while
+  // still ringing is caught too.
+  useEffect(() => {
+    if (!call?.callId) return
+    const iv = setInterval(async () => {
+      if (endedRef.current) return
+      try {
+        const [status, wallet] = await Promise.all([callsApi.get(call.callId), actions.refreshWallet()])
+        const st = (status.status || '').toLowerCase()
+        if (TERMINAL_CALL_STATUSES.includes(st)) {
+          handleServerEnd(status.status, status.totalBeans)
+        } else if (st === 'ongoing') {
+          markAccepted()
+        }
+        void wallet
+      } catch {}
+    }, POLL_MS)
+    return () => clearInterval(iv)
+  }, [call?.callId]) // eslint-disable-line
+
   // local elapsed-time ticker (display only — billing itself is server-side)
   useEffect(() => {
     if (phase !== 'active') return
@@ -84,23 +171,40 @@ export default function CallRoom() {
     return () => clearInterval(iv)
   }, [phase])
 
-  // poll server call + wallet state; react to server-side balance exhaustion or the host ending the call
+  // Real Agora join, once the host has actually answered — mirrors the host
+  // app's ActiveCall. Before this, the call screen showed "connected" the
+  // moment it opened with no real audio/video ever established.
   useEffect(() => {
-    if (phase !== 'active' || !call?.callId) return
-    const iv = setInterval(async () => {
-      try {
-        const [status, wallet] = await Promise.all([callsApi.get(call.callId), actions.refreshWallet()])
-        const st = (status.status || '').toLowerCase()
-        if (st && st !== 'active' && st !== 'ringing' && !endedRef.current) {
-          endedRef.current = true
-          const b = status.totalBeans ?? ''
-          const q = `?d=${secondsRef.current}${b !== '' ? `&b=${b}` : ''}&cid=${call.callId}`
-          navRef.current(st === 'missed' || wallet?.balancePaise <= 0 ? `/call-ended/${hostId}${q}` : `/call-summary/${hostId}${q}`, { replace: true })
-        }
-      } catch {}
-    }, POLL_MS)
-    return () => clearInterval(iv)
-  }, [phase, call?.callId]) // eslint-disable-line
+    if (phase !== 'active' || !call?.channelName || !call?.agoraToken) return
+    let cancelled = false
+    joinAndPublish({
+      channelName: call.channelName,
+      token: call.agoraToken,
+      uid: state.user?.id,
+      video: mode === 'video',
+      onRemoteUser: (user, mediaType, left) => {
+        if (mediaType !== 'video') return
+        if (left) { setRemoteJoined(false); return }
+        user.videoTrack?.play(remoteVideoRef.current)
+        setRemoteJoined(true)
+      },
+    })
+      .then((session) => {
+        if (cancelled) { leaveChannel(session); return }
+        sessionRef.current = session
+        session.localVideoTrack?.play(localVideoRef.current)
+      })
+      .catch((e) => {
+        console.error('Agora join failed:', e)
+        setRtcErr(e instanceof Error ? e.message : 'Could not start the camera/mic for this call.')
+      })
+    return () => {
+      cancelled = true
+      if (sessionRef.current) { leaveChannel(sessionRef.current); sessionRef.current = null }
+    }
+  }, [phase, call?.channelName, call?.agoraToken]) // eslint-disable-line
+
+  useEffect(() => { sessionRef.current?.localAudioTrack?.setEnabled(!muted) }, [muted])
 
   const remainingSec = useMemo(() => {
     if (!call?.ratePaise || !state.wallet) return Infinity
@@ -147,7 +251,9 @@ export default function CallRoom() {
       {/* stage */}
       <div className="relative flex flex-1 items-center justify-center">
         {mode === 'video' && phase === 'active' && (
-          <div className="absolute right-4 top-4 h-36 w-28 rounded-2xl" style={{ background: 'radial-gradient(circle at 40% 35%,#7f9bd6,#4a6bb0)' }} />
+          <div className="absolute right-4 top-4 h-36 w-28 overflow-hidden rounded-2xl" style={{ background: 'radial-gradient(circle at 40% 35%,#7f9bd6,#4a6bb0)' }}>
+            <div ref={localVideoRef} className="absolute inset-0" />
+          </div>
         )}
 
         {phase === 'connecting' && (
@@ -163,9 +269,21 @@ export default function CallRoom() {
             <div className="flex flex-col items-center">
               <div className="rounded-full border border-white/20 p-2"><Avatar id={hostId} size={150} /></div>
               <p className="mt-4 text-[20px] font-bold">{c?.name}</p>
+              {rtcErr && <p className="mt-2 max-w-[240px] text-center text-[12px] text-white/60">{rtcErr}</p>}
             </div>
           ) : (
-            <div className="h-64 w-64 rounded-full bg-white/5" />
+            <div className="absolute inset-0">
+              <div ref={remoteVideoRef} className="absolute inset-0" />
+              {!remoteJoined && (
+                <div className="absolute inset-0 grid place-items-center">
+                  {rtcErr ? (
+                    <p className="max-w-[240px] px-8 text-center text-[13px] text-white/60">{rtcErr}</p>
+                  ) : (
+                    <div className="h-64 w-64 rounded-full bg-white/5" />
+                  )}
+                </div>
+              )}
+            </div>
           )
         )}
 
