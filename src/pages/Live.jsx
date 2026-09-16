@@ -5,6 +5,7 @@ import { useApp } from '../store/AppStore'
 import { Avatar, GradientBox, EmptyState } from '../components/ui'
 import { compact } from '../lib/format'
 import GiftPicker from '../components/GiftPicker'
+import CaptureGuard from '../components/CaptureGuard'
 import { liveApi, giftsApi, ApiError } from '../lib/api'
 
 const G = [['#9b8fe0', '#5b28d6'], ['#5fc9a0', '#2f9878'], ['#e6b980', '#c9822b'], ['#d68f9b', '#9b3f5f']]
@@ -114,7 +115,12 @@ export function LiveRoom() {
   }
 
   return (
-    <div className="fixed inset-0 z-[70] flex flex-col overflow-hidden text-white" style={{ background: 'linear-gradient(180deg,#3a2568 0%,#1a1236 50%,#0b0814 100%)' }}>
+    <div
+      className="fixed inset-0 z-[70] flex select-none flex-col overflow-hidden text-white"
+      style={{ background: 'linear-gradient(180deg,#3a2568 0%,#1a1236 50%,#0b0814 100%)' }}
+      onContextMenu={(e) => e.preventDefault()}
+    >
+      <CaptureGuard context="live" contextId={id} />
       <div className="flex items-center justify-between px-4 pt-4">
         <button onClick={() => nav(room?.hostId ? `/creator/${room.hostId}` : '/live')} className="flex items-center gap-2 rounded-full bg-black/35 px-2 py-1.5">
           <Avatar id={room?.hostId || id} size={22} />

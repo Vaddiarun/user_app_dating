@@ -7,6 +7,7 @@ import { useApp } from '../store/AppStore'
 import { Avatar, Button } from '../components/ui'
 import { clock } from '../lib/format'
 import GiftPicker from '../components/GiftPicker'
+import CaptureGuard from '../components/CaptureGuard'
 import { callsApi, hostsApi, giftsApi, ApiError } from '../lib/api'
 import { normalizeHost } from '../lib/normalize'
 
@@ -126,7 +127,12 @@ export default function CallRoom() {
   const lowBalance = phase === 'active' && remainingSec < 120
 
   return (
-    <div className="fixed inset-0 z-[70] flex flex-col overflow-hidden text-white" style={{ background: 'linear-gradient(180deg,#3a2568 0%,#1a1236 45%,#0b0814 100%)' }}>
+    <div
+      className="fixed inset-0 z-[70] flex select-none flex-col overflow-hidden text-white"
+      style={{ background: 'linear-gradient(180deg,#3a2568 0%,#1a1236 45%,#0b0814 100%)' }}
+      onContextMenu={(e) => e.preventDefault()}
+    >
+      <CaptureGuard context="call" contextId={call?.callId} />
       {/* top bar */}
       <div className="flex items-center justify-between px-4 pt-4">
         <div className="flex items-center gap-2 rounded-full bg-black/35 px-3 py-1.5">

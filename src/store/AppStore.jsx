@@ -121,6 +121,7 @@ export function AppProvider({ children }) {
         ts: b.blockedAt ? new Date(b.blockedAt).getTime() : Date.now(),
       }))
       dispatch({ type: 'session/set', user, wallet, notifPrefs, blocked, following })
+      return user
     } catch (err) {
       // A 401 that couldn't be refreshed already wipes the session inside api.js —
       // that's a real "you're logged out" case. Anything else (network down, 5xx)
@@ -131,6 +132,7 @@ export function AppProvider({ children }) {
       } else {
         dispatch({ type: 'boot/error' })
       }
+      return null
     }
   }).current
 
@@ -150,7 +152,7 @@ export function AppProvider({ children }) {
     retryBoot: loadProfile,
     async login({ accessToken, refreshToken, userId }) {
       setSession({ accessToken, refreshToken, userId })
-      await loadProfile()
+      return loadProfile()
     },
     async logout() {
       try { await authApi.logout() } catch {}

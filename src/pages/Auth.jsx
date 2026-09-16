@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { Sparkles, ChevronLeft, ChevronRight, Camera, ShieldCheck, Loader2, Clock } from 'lucide-react'
+import { Sparkles, ChevronLeft, ChevronRight, Camera, ShieldCheck, ShieldAlert, Loader2, Clock } from 'lucide-react'
 import { Button } from '../components/ui'
 import { Avatar } from '../components/ui'
 import { useApp } from '../store/AppStore'
@@ -60,6 +60,19 @@ function StepHeader({ n, title, onBack }) {
 function ErrorText({ error }) {
   if (!error) return null
   return <p className="mt-2 text-[13px] font-medium text-rose-500">{error}</p>
+}
+
+const MIN_AGE = 18
+
+function ageFromDob(dobStr) {
+  if (!dobStr) return null
+  const dob = new Date(dobStr)
+  if (Number.isNaN(dob.getTime())) return null
+  const today = new Date()
+  let age = today.getFullYear() - dob.getFullYear()
+  const beforeBirthdayThisYear = today.getMonth() < dob.getMonth() || (today.getMonth() === dob.getMonth() && today.getDate() < dob.getDate())
+  if (beforeBirthdayThisYear) age--
+  return age
 }
 
 const AUTO_ADVANCE_MS = 1600
@@ -137,8 +150,8 @@ export function Phone() {
     setBusy(true)
     setError('')
     try {
-      const res = await authApi.requestOtp(phone)
-      nav('/onboarding/otp', { state: { phone, devCode: res?.devCode || '' } })
+      await authApi.requestOtp(phone)
+      nav('/onboarding/otp', { state: { phone } })
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not send code. Try again.')
     } finally {
@@ -177,7 +190,7 @@ export function Otp() {
   const location = useLocation()
   const { actions } = useApp()
   const phone = location.state?.phone
-  const [d, setD] = useState(Array.from(location.state?.devCode || '', (c) => c).concat(Array(6).fill('')).slice(0, 6))
+  const [d, setD] = useState(Array(6).fill(''))
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [resendIn, setResendIn] = useState(30)
@@ -214,8 +227,10 @@ export function Otp() {
     setError('')
     try {
       const res = await authApi.verifyOtp(phone, code, 'user')
-      await actions.login({ accessToken: res.accessToken, refreshToken: res.refreshToken, userId: res.user?.id })
-      nav('/onboarding/profile')
+      const user = await actions.login({ accessToken: res.accessToken, refreshToken: res.refreshToken, userId: res.user?.id })
+      // Returning users who already finished onboarding shouldn't be walked
+      // through "set up profile" / "access confirmed" on every single login.
+      nav(user?.name && user?.dob ? '/' : '/onboarding/profile')
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Invalid code. Try again.')
     } finally {
@@ -277,12 +292,18 @@ export function ProfileSetup() {
   const { state, actions } = useApp()
   const [name, setName] = useState('')
   const [dob, setDob] = useState('')
+  const maxDob = new Date(new Date().setFullYear(new Date().getFullYear() - MIN_AGE)).toISOString().slice(0, 10)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
   const submit = async () => {
     if (!name.trim()) { setError('Enter a display name'); return }
     if (!dob) { setError('Enter your date of birth'); return }
+    const age = ageFromDob(dob)
+    if (age == null || age < MIN_AGE) {
+      setError(`You must be at least ${MIN_AGE} years old to use Vibe.`)
+      return
+    }
     setBusy(true)
     setError('')
     try {
@@ -313,10 +334,11 @@ export function ProfileSetup() {
       <input
         type="date"
         value={dob}
+        max={maxDob}
         onChange={(e) => setDob(e.target.value)}
         className="mt-2 flex w-full items-center justify-between rounded-xl border border-line bg-canvas px-4 py-3 text-[15px] outline-none"
       />
-      <p className="mt-3 text-[12px] leading-relaxed text-subtle">Date of birth is used to confirm eligibility. It is never shown on your public profile.</p>
+      <p className="mt-3 text-[12px] leading-relaxed text-subtle">You must be {MIN_AGE}+ to use Vibe. Your date of birth is never shown on your public profile.</p>
       <ErrorText error={error} />
       <Button className="mt-5 w-full py-3" onClick={submit} disabled={busy}>
         {busy ? <Loader2 size={16} className="animate-spin" /> : null} Continue <ChevronRight size={16} />
@@ -331,37 +353,64 @@ export function AccessConfirmed() {
   const [busy, setBusy] = useState(true)
   const [verified, setVerified] = useState(null)
   const [error, setError] = useState('')
+  const [loggingOut, setLoggingOut] = useState(false)
 
-  useEffect(() => {
+  const check = () => {
+    setBusy(true)
+    setError('')
     meApi.verifyAge()
       .then((res) => { setVerified(!!res.ageVerified); actions.patchUserLocal({ ageVerified: !!res.ageVerified }) })
       .catch((err) => setError(err instanceof ApiError ? err.message : 'Could not verify age.'))
       .finally(() => setBusy(false))
-  }, []) // eslint-disable-line
+  }
+  useEffect(check, []) // eslint-disable-line
+
+  const denied = !busy && !error && verified === false
+
+  const leave = async () => {
+    setLoggingOut(true)
+    try { await actions.logout() } finally { nav('/onboarding') }
+  }
 
   return (
     <Page>
       <StepHeader n={4} title="Access" />
 
       <div className="flex flex-col items-center py-4 text-center">
-        <span className="grid h-24 w-24 place-items-center rounded-[28px] text-brand" style={{ background: 'linear-gradient(150deg,#f3e9ff,#ffe9e0)' }}>
-          {busy ? <Loader2 size={32} className="animate-spin" /> : <ShieldCheck size={44} />}
+        <span
+          className={`grid h-24 w-24 place-items-center rounded-[28px] ${denied ? 'text-rose-500' : 'text-brand'}`}
+          style={{ background: denied ? '#fde8e8' : 'linear-gradient(150deg,#f3e9ff,#ffe9e0)' }}
+        >
+          {busy ? <Loader2 size={32} className="animate-spin" /> : denied ? <ShieldAlert size={44} /> : <ShieldCheck size={44} />}
         </span>
-        <h1 className="mt-5 text-[21px] font-bold text-ink">{busy ? 'Checking eligibility…' : verified ? 'Access confirmed' : 'Access limited'}</h1>
+        <h1 className="mt-5 text-[21px] font-bold text-ink">
+          {busy ? 'Checking eligibility…' : error ? 'Could not verify' : denied ? 'Access denied' : 'Access confirmed'}
+        </h1>
         <p className="mt-2 text-[14px] leading-relaxed text-subtle">
           {busy
             ? 'One moment while we confirm your date of birth.'
-            : verified
-              ? 'Your date of birth meets the eligibility requirement for this platform. No further action is needed.'
-              : error || 'Your date of birth does not meet the eligibility requirement yet. You can still use most of the app.'}
+            : error
+              ? error
+              : denied
+                ? `You must be ${MIN_AGE} or older to use Vibe. This account does not meet that requirement, so it can't continue.`
+                : 'Your date of birth meets the eligibility requirement for this platform. No further action is needed.'}
         </p>
-        {!busy && verified && (
+        {!busy && !error && verified && (
           <p className="mt-4 flex items-center gap-1.5 text-[13px] font-semibold text-green-600">
             <span className="h-2 w-2 rounded-full bg-green-500" /> Verified from date of birth
           </p>
         )}
       </div>
-      <Button className="w-full py-3.5" disabled={busy} onClick={() => nav('/')}>Continue to Vibe</Button>
+
+      {error ? (
+        <Button className="w-full py-3.5" onClick={check}>Try again</Button>
+      ) : denied ? (
+        <Button variant="danger" className="w-full py-3.5" disabled={loggingOut} onClick={leave}>
+          {loggingOut ? <Loader2 size={16} className="animate-spin" /> : null} Log out
+        </Button>
+      ) : (
+        <Button className="w-full py-3.5" disabled={busy} onClick={() => nav('/')}>Continue to Vibe</Button>
+      )}
     </Page>
   )
 }
