@@ -227,16 +227,13 @@ export function Otp() {
     setBusy(true)
     setError('')
     try {
+      // The backend looks this phone number up scoped to role "user"
+      // specifically (users table is unique per phone+role, not phone
+      // alone) — a phone already used on the Host app has a separate Host
+      // account this can never return or escalate into. It either logs
+      // into this phone's own User account or creates one; either way the
+      // result is always role "user".
       const res = await authApi.verifyOtp(phone, code, 'user')
-      // `role` is only honored by the backend for a brand-new signup — an
-      // existing account (e.g. this phone number was already used on the
-      // Host app) keeps whatever role it already has. Without this check,
-      // that phone number would log in "fine" here but every user-only
-      // endpoint afterward 403s, landing on a broken home screen with no
-      // explanation of why.
-      if (res.user?.role !== 'user') {
-        throw new ApiError('This number is already registered as a different account type. Use a different number, or log in from the correct app.', 403)
-      }
       const restriction = getRestriction(res.user?.id)
       if (restriction) {
         nav('/account-restricted', { state: { caseRef: restriction.caseRef }, replace: true })

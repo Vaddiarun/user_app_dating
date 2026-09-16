@@ -184,10 +184,21 @@ export default function CallRoom() {
       uid: state.user?.id,
       video: mode === 'video',
       onRemoteUser: (user, mediaType, left) => {
-        if (mediaType !== 'video') return
-        if (left) { setRemoteJoined(false); return }
-        user.videoTrack?.play(remoteVideoRef.current)
-        setRemoteJoined(true)
+        // Agora fires this once per media type (audio and video publish/
+        // subscribe independently) — this used to bail out entirely for
+        // anything but 'video', so the caller's subscribed audio track was
+        // never actually started. Subscribing alone doesn't play it; the
+        // SDK requires an explicit .play() call, same as video.
+        if (left) {
+          if (mediaType === 'video') setRemoteJoined(false)
+          return
+        }
+        if (mediaType === 'video') {
+          user.videoTrack?.play(remoteVideoRef.current)
+          setRemoteJoined(true)
+        } else if (mediaType === 'audio') {
+          user.audioTrack?.play()
+        }
       },
     })
       .then((session) => {
