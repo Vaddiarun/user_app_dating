@@ -3,6 +3,7 @@ import { useEffect } from 'react'
 import AppShell from './components/AppShell'
 import { useApp } from './store/AppStore'
 import { ToastHost } from './components/ui'
+import CaptureGuard from './components/CaptureGuard'
 
 import Home from './pages/Home'
 import Creator from './pages/Creator'
@@ -54,7 +55,8 @@ function RequireGuest() {
 export default function App() {
   const { toasts } = useApp()
   return (
-    <>
+    <div className="select-none" onContextMenu={(e) => e.preventDefault()}>
+      <CaptureGuard />
       <ToastHost toasts={toasts} />
       <Routes>
         {/* onboarding — guests only */}
@@ -115,6 +117,6 @@ export default function App() {
           </Route>
         </Route>
       </Routes>
-    </>
+    </div>
   )
 }

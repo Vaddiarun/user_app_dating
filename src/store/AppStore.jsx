@@ -133,6 +133,7 @@ export function AppProvider({ children }) {
       } else {
         dispatch({ type: 'boot/error' })
       }
+      return null
     }
   }).current
 

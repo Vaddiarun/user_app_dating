@@ -11,23 +11,27 @@ import { CallModal } from './Home'
 import { chatApi, hostsApi, giftsApi, ApiError } from '../lib/api'
 import { normalizeHost } from '../lib/normalize'
 
+// Verified against the live backend: GET /chat/conversations returns
+// { conversations: [{ id, userId, hostId, lastMessageAt, createdAt, otherParticipant: { id, name, phone, role } }] }
+// — there's no last-message preview or unread count in that response at all,
+// so a conversation row can't show either without fabricating them.
 function normalizeConversation(c) {
-  const host = c.host || c.participant || {}
-  const last = c.lastMessage || {}
+  const other = c.otherParticipant || {}
   return {
     conversationId: c.id || c.conversationId,
-    hostId: c.hostId || host.id || c.participantId,
-    hostName: host.name || c.hostName || 'Creator',
-    lastText: last.content || last.text || c.lastMessageText || '',
-    lastTs: last.createdAt ? new Date(last.createdAt).getTime() : c.updatedAt ? new Date(c.updatedAt).getTime() : Date.now(),
-    unread: c.unreadCount ?? c.unread ?? 0,
+    hostId: c.hostId || other.id,
+    hostName: other.name || 'Creator',
+    lastTs: c.lastMessageAt ? new Date(c.lastMessageAt).getTime() : c.createdAt ? new Date(c.createdAt).getTime() : Date.now(),
   }
 }
 
-function normalizeMessage(m) {
+// GET /chat/conversations/:id/messages returns { messages: [{ id, conversationId, senderId, content, createdAt }] }
+// — "mine" has to be senderId compared against the logged-in user's own id
+// (passed in as viewerId), not any field on the message itself.
+function normalizeMessage(m, viewerId) {
   return {
     id: m.id,
-    mine: m.senderId ? m.senderId === m.viewerId : m.from === 'me' || m.direction === 'outgoing',
+    mine: !!viewerId && m.senderId === viewerId,
     text: m.content || m.text || '',
     ts: m.createdAt ? new Date(m.createdAt).getTime() : Date.now(),
   }
@@ -75,7 +79,7 @@ export default function Chat() {
 
   return (
     <div className="mx-auto max-w-6xl">
-      <div className="grid h-[calc(100vh-8.5rem)] overflow-hidden rounded-2xl border border-line bg-card md:grid-cols-[300px_1fr]">
+      <div className="grid h-[calc(100dvh-8.5rem)] overflow-hidden rounded-2xl border border-line bg-card md:grid-cols-[300px_1fr]">
         {/* list */}
         <div className={`min-h-0 flex-col border-r border-line ${id ? 'hidden md:flex' : 'flex'}`}>
           <div className="border-b border-line px-4 py-3 text-[15px] font-bold text-ink">Messages</div>
@@ -88,19 +92,11 @@ export default function Chat() {
                   id === cv.hostId ? 'bg-brand-50 dark:bg-brand/15' : 'hover:bg-gray-50 dark:hover:bg-white/5'
                 }`}
               >
-                <Avatar id={cv.hostId} size={42} ring={cv.unread > 0} ringColor="#5b28d6" />
+                <Avatar id={cv.hostId} size={42} />
                 <div className="min-w-0 flex-1">
                   <p className="text-[14px] font-semibold text-ink">{cv.hostName}</p>
-                  <p className="truncate text-[12px] text-subtle">{cv.lastText}</p>
                 </div>
-                <div className="flex flex-col items-end gap-1">
-                  <span className="text-[11px] text-subtle">{relTime(cv.lastTs)}</span>
-                  {cv.unread > 0 && (
-                    <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-brand px-1.5 text-[11px] font-bold text-white">
-                      {cv.unread}
-                    </span>
-                  )}
-                </div>
+                <span className="text-[11px] text-subtle">{relTime(cv.lastTs)}</span>
               </button>
             ))}
           </div>
@@ -139,10 +135,18 @@ function Conversation({ hostId, conversationId: initialConvId }) {
     return () => { alive = false }
   }, [hostId])
 
+  // Landing here directly (e.g. "Message {name}" from a creator profile or call
+  // summary) mounts before the parent's conversation list has loaded, so the
+  // real conversationId often isn't known yet at mount time. Pick it up once it
+  // resolves instead of staying stuck with no messages forever.
+  useEffect(() => {
+    if (initialConvId && initialConvId !== conversationId) setConversationId(initialConvId)
+  }, [initialConvId]) // eslint-disable-line
+
   const loadMessages = (cid) => {
     if (!cid) { setLoading(false); return }
     chatApi.messages(cid, 1, 50)
-      .then((res) => setMessages((res.messages || res.items || []).map(normalizeMessage)))
+      .then((res) => setMessages((res.messages || res.items || []).map((m) => normalizeMessage(m, state.user?.id))))
       .catch(() => {})
       .finally(() => setLoading(false))
   }

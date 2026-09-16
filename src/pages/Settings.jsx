@@ -6,7 +6,7 @@ import {
 } from 'lucide-react'
 import { useApp } from '../store/AppStore'
 import { Avatar, Button, Card, Toggle, EmptyState } from '../components/ui'
-import { beans } from '../lib/format'
+import { beans, userName, userHandle } from '../lib/format'
 import {
   meApi, vipApi, walletApi, grievanceApi, uploadToS3, ApiError,
 } from '../lib/api'
@@ -39,7 +39,11 @@ export function EditProfile() {
     setBusy(true)
     setError('')
     try {
-      await meApi.update({ name, username, email })
+      const cleanName = name.trim()
+      const cleanUsername = username.trim()
+      const cleanEmail = email.trim()
+      await meApi.update({ name: cleanName, username: cleanUsername, email: cleanEmail })
+      actions.patchUserLocal({ name: cleanName, username: cleanUsername, email: cleanEmail })
       await actions.refreshUser()
       toast('Profile saved')
     } catch (err) {
@@ -52,8 +56,12 @@ export function EditProfile() {
   return (
     <Sub title="Edit Profile">
       <div className="flex flex-col items-center">
-        <Avatar id={u.id || 'me'} size={88} />
-        <p className="mt-2 text-[12px] text-subtle">User ID {u.id}</p>
+        <Avatar id={u.id || 'me'} size={88} ring ringColor="#5b28d6" />
+        <h2 className="mt-2.5 text-[18px] font-bold text-ink">{userName({ ...u, name, username })}</h2>
+        {(username || u.username) && (
+          <p className="text-[13px] font-medium text-brand">@{username || u.username}</p>
+        )}
+        <p className="mt-0.5 text-[12px] text-subtle">User ID: {u.id || '—'}</p>
       </div>
       <div className="mt-5 space-y-4">
         <Field label="Full Name" value={name} onChange={setName} />

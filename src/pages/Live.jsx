@@ -3,8 +3,9 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { Eye, Radio, Heart, Gift, X, Send, Loader2 } from 'lucide-react'
 import { useApp } from '../store/AppStore'
 import { Avatar, GradientBox, EmptyState } from '../components/ui'
-import { compact } from '../lib/format'
+import { compact, userName } from '../lib/format'
 import GiftPicker from '../components/GiftPicker'
+import Watermark from '../components/Watermark'
 import { liveApi, giftsApi, ApiError } from '../lib/api'
 
 const G = [['#9b8fe0', '#5b28d6'], ['#5fc9a0', '#2f9878'], ['#e6b980', '#c9822b'], ['#d68f9b', '#9b3f5f']]
@@ -109,12 +110,16 @@ export function LiveRoom() {
     const t = text.trim()
     if (!t) return
     setText('')
-    setMsgs((m) => [...m, { id: Date.now(), n: state.user?.name || 'You', t }])
+    setMsgs((m) => [...m, { id: Date.now(), n: userName(state.user), t }])
     try { await liveApi.chat(id, t) } catch { toast('Could not send message') }
   }
 
   return (
-    <div className="fixed inset-0 z-[70] flex flex-col overflow-hidden text-white" style={{ background: 'linear-gradient(180deg,#3a2568 0%,#1a1236 50%,#0b0814 100%)' }}>
+    <div
+      className="fixed inset-0 z-[70] flex select-none flex-col overflow-hidden text-white"
+      style={{ background: 'linear-gradient(180deg,#3a2568 0%,#1a1236 50%,#0b0814 100%)' }}
+      onContextMenu={(e) => e.preventDefault()}
+    >
       <div className="flex items-center justify-between px-4 pt-4">
         <button onClick={() => nav(room?.hostId ? `/creator/${room.hostId}` : '/live')} className="flex items-center gap-2 rounded-full bg-black/35 px-2 py-1.5">
           <Avatar id={room?.hostId || id} size={22} />
@@ -128,6 +133,7 @@ export function LiveRoom() {
       </div>
 
       <div className="relative flex flex-1 items-center justify-center">
+        <Watermark user={state.user} />
         <div className="h-64 w-64 rounded-full bg-white/5" />
         <div className="pointer-events-none absolute bottom-0 right-6 h-full w-16">
           {hearts.map((h) => (
@@ -166,7 +172,7 @@ export function LiveRoom() {
             await giftsApi.send(room?.hostId || id, g.id, 'live', id)
             await actions.refreshWallet()
             setGift(false)
-            setMsgs((m) => [...m, { id: Date.now(), n: state.user?.name || 'You', t: `sent a ${g.name}` }])
+            setMsgs((m) => [...m, { id: Date.now(), n: userName(state.user), t: `sent a ${g.name}` }])
             toast(`Sent ${g.name}`)
           }}
         />

@@ -5,7 +5,7 @@ import {
 } from 'lucide-react'
 import { useApp } from '../store/AppStore'
 import { Avatar, Card } from '../components/ui'
-import { beans } from '../lib/format'
+import { beans, userName, userHandle } from '../lib/format'
 
 export default function Profile() {
   const { state } = useApp()
@@ -50,9 +50,10 @@ export default function Profile() {
         <Avatar id={u.id || 'me'} size={60} ring ringColor="#5b28d6" />
         <div className="flex-1">
           <div className="flex items-center gap-2">
-            <span className="text-[17px] font-bold text-ink">{u.name || 'You'}</span>
+            <span className="text-[17px] font-bold text-ink">{userName(u)}</span>
             {u.isVipActive && <span className="rounded-full bg-gold-soft px-1.5 py-0.5 text-[10px] font-bold text-gold dark:bg-gold/15">👑 VIP</span>}
           </div>
+          {u.username && <p className="text-[12px] font-medium text-brand">@{u.username}</p>}
           <p className="text-[12px] text-subtle">{u.phone}</p>
           {u.ageVerified && (
             <div className="mt-1 flex items-center gap-2 text-[11px]">

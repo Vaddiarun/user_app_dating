@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { AlertTriangle, WifiOff, Clock, ShieldAlert, RotateCw, LogOut } from 'lucide-react'
 import { Button, Card } from '../components/ui'
 import { useApp } from '../store/AppStore'
@@ -51,6 +51,8 @@ export function SessionExpired() {
 }
 
 export function AccountRestricted() {
+  const location = useLocation()
+  const caseRef = location.state?.caseRef
   return (
     <Center>
       <span className="grid h-24 w-24 place-items-center rounded-full bg-gray-100 dark:bg-white/10">
@@ -58,12 +60,19 @@ export function AccountRestricted() {
       </span>
       <h1 className="mt-4 text-[20px] font-bold text-ink">Account restricted</h1>
       <p className="mt-2 text-[14px] leading-relaxed text-subtle">
-        Access to this account has been restricted following a review of our community guidelines.
+        This account was suspended after repeated screenshot attempts on protected content.
       </p>
       <Card className="mt-5 w-full p-4 text-left">
-        <p className="text-[11px] font-bold uppercase tracking-wide text-subtle">Reference</p>
-        <p className="text-[15px] font-bold text-ink">CASE-4821-VB</p>
-        <p className="mt-2 text-[12px] text-subtle">If you believe this is a mistake, contact <span className="font-semibold text-ink">support@vibe.app</span></p>
+        {caseRef && (
+          <>
+            <p className="text-[11px] font-bold uppercase tracking-wide text-subtle">Reference</p>
+            <p className="text-[15px] font-bold text-ink">{caseRef}</p>
+          </>
+        )}
+        <p className={caseRef ? 'mt-2 text-[12px] text-subtle' : 'text-[12px] text-subtle'}>
+          If you believe this is a mistake, contact <span className="font-semibold text-ink">support@vibe.app</span>
+          {caseRef ? ' with the reference above.' : '.'}
+        </p>
       </Card>
     </Center>
   )

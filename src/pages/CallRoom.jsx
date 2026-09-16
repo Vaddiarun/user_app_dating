@@ -7,6 +7,7 @@ import { useApp } from '../store/AppStore'
 import { Avatar, Button } from '../components/ui'
 import { clock } from '../lib/format'
 import GiftPicker from '../components/GiftPicker'
+import Watermark from '../components/Watermark'
 import { callsApi, hostsApi, giftsApi, ApiError } from '../lib/api'
 import { normalizeHost } from '../lib/normalize'
 import { joinAndPublish, leaveChannel } from '../lib/agora'
@@ -230,7 +231,11 @@ export default function CallRoom() {
   const lowBalance = phase === 'active' && remainingSec < 120
 
   return (
-    <div className="fixed inset-0 z-[70] flex flex-col overflow-hidden text-white" style={{ background: 'linear-gradient(180deg,#3a2568 0%,#1a1236 45%,#0b0814 100%)' }}>
+    <div
+      className="fixed inset-0 z-[70] flex select-none flex-col overflow-hidden text-white"
+      style={{ background: 'linear-gradient(180deg,#3a2568 0%,#1a1236 45%,#0b0814 100%)' }}
+      onContextMenu={(e) => e.preventDefault()}
+    >
       {/* top bar */}
       <div className="flex items-center justify-between px-4 pt-4">
         <div className="flex items-center gap-2 rounded-full bg-black/35 px-3 py-1.5">
@@ -250,6 +255,7 @@ export default function CallRoom() {
 
       {/* stage */}
       <div className="relative flex flex-1 items-center justify-center">
+        {phase === 'active' && <Watermark user={state.user} />}
         {mode === 'video' && phase === 'active' && (
           <div className="absolute right-4 top-4 h-36 w-28 overflow-hidden rounded-2xl" style={{ background: 'radial-gradient(circle at 40% 35%,#7f9bd6,#4a6bb0)' }}>
             <div ref={localVideoRef} className="absolute inset-0" />

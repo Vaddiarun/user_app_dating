@@ -117,9 +117,15 @@ async function request(path, { method = 'GET', body, auth = true, retry = true }
   }
 
   const text = await res.text()
-  const data = text ? JSON.parse(text) : null
+  let data = null
+  if (text) {
+    try { data = JSON.parse(text) } catch { data = null }
+  }
   if (!res.ok) {
-    throw new ApiError(data?.message || data?.error || res.statusText || 'Request failed', res.status, data)
+    // Not every error path returns JSON (rate limiting, proxy errors, etc. can
+    // come back as plain text) — fall back to the raw body so the real reason
+    // still reaches the UI instead of a generic message.
+    throw new ApiError(data?.message || data?.error || (typeof text === 'string' && text.trim()) || res.statusText || 'Request failed', res.status, data)
   }
   return data
 }
