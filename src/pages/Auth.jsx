@@ -214,8 +214,21 @@ export function Otp() {
     setError('')
     try {
       const res = await authApi.verifyOtp(phone, code, 'user')
-      await actions.login({ accessToken: res.accessToken, refreshToken: res.refreshToken, userId: res.user?.id })
-      nav('/onboarding/profile')
+      // `role` is only honored by the backend for a brand-new signup — an
+      // existing account (e.g. this phone number was already used on the
+      // Host app) keeps whatever role it already has. Without this check,
+      // that phone number would log in "fine" here but every user-only
+      // endpoint afterward 403s, landing on a broken home screen with no
+      // explanation of why.
+      if (res.user?.role !== 'user') {
+        throw new ApiError('This number is already registered as a different account type. Use a different number, or log in from the correct app.', 403)
+      }
+      const user = await actions.login({ accessToken: res.accessToken, refreshToken: res.refreshToken, userId: res.user?.id })
+      // OTP verify succeeds the same way for a brand-new signup and a returning
+      // account (an existing phone number just logs the account back in) — only
+      // an account that never finished profile setup (no name on file yet)
+      // should be sent through onboarding again.
+      nav(user?.name ? '/' : '/onboarding/profile', { replace: true })
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Invalid code. Try again.')
     } finally {

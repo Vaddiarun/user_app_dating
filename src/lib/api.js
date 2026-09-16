@@ -68,7 +68,7 @@ let refreshPromise = null
 async function refreshAccessToken() {
   if (!session.refreshToken) throw new ApiError('No refresh token', 401)
   if (!refreshPromise) {
-    refreshPromise = fetch(`${API_BASE_URL}/auth/token/refresh`, {
+    refreshPromise = fetch(`${API_BASE_URL}/user/auth/token/refresh`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ refreshToken: session.refreshToken }),
@@ -86,6 +86,9 @@ async function refreshAccessToken() {
   return refreshPromise
 }
 
+// The backend now namespaces every endpoint by app (API-design follow-up) —
+// this app only ever calls the User surface, so every path gets /user
+// prepended here in one place rather than at each call site.
 async function request(path, { method = 'GET', body, auth = true, retry = true } = {}) {
   const headers = { 'Content-Type': 'application/json' }
   if (auth) {
@@ -94,7 +97,7 @@ async function request(path, { method = 'GET', body, auth = true, retry = true }
   }
   let res
   try {
-    res = await fetch(`${API_BASE_URL}${path}`, {
+    res = await fetch(`${API_BASE_URL}/user${path}`, {
       method,
       headers,
       body: body === undefined ? undefined : JSON.stringify(body),
