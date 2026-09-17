@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
-  Mic, MicOff, MessageSquare, Gift, PhoneOff, X, AlertTriangle, Loader2,
+  Mic, MicOff, MessageSquare, Gift, PhoneOff, X, AlertTriangle, Wallet, RotateCw,
 } from 'lucide-react'
 import { useApp } from '../store/AppStore'
 import { Avatar, Button } from '../components/ui'
@@ -30,7 +30,9 @@ export default function CallRoom() {
   const [call, setCall] = useState(null) // { callId, ratePaise, channelName, agoraToken }
   const [phase, setPhase] = useState('connecting') // connecting | active | error
   const [error, setError] = useState('')
+  const [errorKind, setErrorKind] = useState('generic') // 'balance' | 'generic'
   const [seconds, setSeconds] = useState(0)
+  const [ringSeconds, setRingSeconds] = useState(0)
   const [muted, setMuted] = useState(false)
   const [showChat, setShowChat] = useState(false)
   const [gift, setGift] = useState(false)
@@ -39,8 +41,11 @@ export default function CallRoom() {
   const [camErr, setCamErr] = useState('') // non-fatal — camera specifically failed, audio still works
   const [remoteJoined, setRemoteJoined] = useState(false)
 
+  const [attempt, setAttempt] = useState(0)
   const endedRef = useRef(false)
   const acceptedRef = useRef(false)
+  const initiatedKeyRef = useRef(null) // guards against StrictMode's dev-only double-effect placing two real POST /calls
+  const initPromiseRef = useRef(null)
   const navRef = useRef(nav)
   navRef.current = nav
   const secondsRef = useRef(0)
@@ -54,9 +59,32 @@ export default function CallRoom() {
   // set up: fetch host (for name/avatar/rate) + initiate the call. The backend
   // hands back this user's own Agora channel/token right here (POST /calls) —
   // there's nothing more to fetch once the host accepts, just a join to do.
+  //
+  // React StrictMode intentionally mounts, cleans up, then re-mounts every
+  // component once in dev, running this effect twice on the same instance.
+  // The ref guard below stops a second real POST /calls going out — but a
+  // first version of that guard skipped straight past the promise itself,
+  // which meant the *result* got lost too: StrictMode's synthetic cleanup set
+  // `alive = false` on the one invocation that actually owned the in-flight
+  // request, and the replay invocation — the one whose `alive` stayed true —
+  // never touched that request's `.then()/.catch()` at all. So a real error
+  // (e.g. "Insufficient balance") came back from the network, and nothing
+  // ever showed it — the screen just sat on "Connecting…" forever. Fix: store
+  // the promise itself in a ref, created once, and let *every* effect
+  // invocation (both the original and the StrictMode replay) attach its own
+  // `.then()/.catch()` to that same shared promise — whichever invocation is
+  // still "alive" when it resolves applies the result.
   useEffect(() => {
+    const key = `${hostId}:${mode}:${attempt}`
+    if (initiatedKeyRef.current !== key) {
+      initiatedKeyRef.current = key
+      initPromiseRef.current = Promise.all([
+        hostsApi.get(hostId).catch(() => null),
+        callsApi.initiate(hostId, mode === 'audio' ? 'voice' : mode),
+      ])
+    }
     let alive = true
-    Promise.all([hostsApi.get(hostId).catch(() => null), callsApi.initiate(hostId, mode === 'audio' ? 'voice' : mode)])
+    initPromiseRef.current
       .then(([hostRes, callRes]) => {
         if (!alive) return
         const host = hostRes ? normalizeHost(hostRes) : null
@@ -70,11 +98,13 @@ export default function CallRoom() {
       })
       .catch((err) => {
         if (!alive) return
-        setError(err instanceof ApiError ? err.message : 'Could not connect this call')
+        const msg = err instanceof ApiError ? err.message : 'Could not connect this call'
+        setError(msg)
+        setErrorKind(/insufficient balance/i.test(msg) ? 'balance' : 'generic')
         setPhase('error')
       })
     return () => { alive = false }
-  }, [hostId, mode]) // eslint-disable-line
+  }, [hostId, mode, attempt]) // eslint-disable-line
 
   const markAccepted = () => {
     if (acceptedRef.current) return
@@ -92,22 +122,48 @@ export default function CallRoom() {
     const q = `?d=${secondsRef.current}${b !== '' ? `&b=${b}` : ''}${cid ? `&cid=${cid}` : ''}`
     // missed/rejected/failed means the call never really connected — same
     // "didn't go through" outcome screen as a ringing timeout; only a call
-    // that actually ran (completed) gets the rate-this-call summary.
-    navRef.current(st === 'completed' ? `/call-summary/${hostId}${q}` : `/call-ended/${hostId}${q}`, { replace: true })
+    // that actually ran (completed) gets the rate-this-call summary. `st` is
+    // the backend's own status string (missed/rejected/failed), which lines
+    // up directly with CallEnded's reason keys — so it also tells that screen
+    // *which* "didn't connect" outcome this actually was.
+    navRef.current(st === 'completed' ? `/call-summary/${hostId}${q}` : `/call-ended/${hostId}${q}&reason=${st}`, { replace: true })
   }
 
+  // Cancel/hang-up must always do *something* — previously this bailed out
+  // entirely if `call` hadn't been set yet (e.g. tapping Cancel in the brief
+  // window before POST /calls resolves), leaving the button completely dead
+  // and the user stuck on the connecting screen with no way out.
   const finish = async (reason) => {
-    if (endedRef.current || !call?.callId) return
+    if (endedRef.current) return
     endedRef.current = true
     if (sessionRef.current) { await leaveChannel(sessionRef.current); sessionRef.current = null }
+    const cid = callRef.current?.callId
+    const wasActive = acceptedRef.current
+    if (!cid) {
+      // Never got a callId back from the backend (still initiating, or it
+      // never succeeded) — there's nothing server-side to end, just leave.
+      navRef.current('/', { replace: true })
+      return
+    }
     try {
-      const res = await callsApi.end(call.callId)
-      actions.refreshWallet().catch(() => { })
+      const res = await callsApi.end(cid)
+      actions.refreshWallet().catch(() => {})
       // The end-call response carries totalBeans/totalAmountPaise but no duration
       // field — the client's own elapsed timer is the only source for that.
       const b = res.totalBeans ?? ''
-      const q = `?d=${seconds}${b !== '' ? `&b=${b}` : ''}&cid=${call.callId}`
-      const dest = reason === 'balance' ? `/call-ended/${hostId}${q}` : reason === 'addbalance' ? '/add-balance' : `/call-summary/${hostId}${q}`
+      const q = `?d=${secondsRef.current}${b !== '' ? `&b=${b}` : ''}&cid=${cid}`
+      // A call cancelled/timed out while still ringing never connected — same
+      // "didn't go through" screen regardless of why, not the rate-this-call
+      // summary (that's only for a call that actually ran).
+      // A ring timeout and a manual cancel-while-ringing are both, from the
+      // caller's point of view, just "nobody picked up" / "I hung up before
+      // it connected" — map them onto CallEnded's reason keys.
+      const endReason = reason === 'timeout' ? 'missed' : reason === 'balance' ? 'balance' : 'cancelled'
+      const dest = reason === 'addbalance'
+        ? '/add-balance'
+        : reason === 'balance' || !wasActive
+          ? `/call-ended/${hostId}${q}&reason=${endReason}`
+          : `/call-summary/${hostId}${q}`
       navRef.current(dest, { replace: true })
     } catch {
       navRef.current('/', { replace: true })
@@ -174,12 +230,30 @@ export default function CallRoom() {
     return () => clearInterval(iv)
   }, [phase])
 
+  // ring-duration ticker — purely cosmetic, but reassures the caller the app
+  // is actually still doing something rather than looking frozen while ringing
+  useEffect(() => {
+    if (phase !== 'connecting') { setRingSeconds(0); return }
+    const iv = setInterval(() => setRingSeconds((s) => s + 1), 1000)
+    return () => clearInterval(iv)
+  }, [phase])
+
   // ringback tone while waiting for the host to accept
   useEffect(() => {
     if (phase !== 'connecting') return
     const stop = startRingback()
     return stop
   }, [phase])
+
+  // Ring timeout — without this, an unanswered call rings forever with no way
+  // out for the caller beyond a manual cancel. 45s unanswered auto-ends it.
+  useEffect(() => {
+    if (phase !== 'connecting' || !call?.callId) return
+    const t = setTimeout(() => {
+      if (!acceptedRef.current) finishRef.current('timeout')
+    }, 45000)
+    return () => clearTimeout(t)
+  }, [phase, call?.callId])
 
   // Real Agora join, once the host has actually answered — mirrors the host
   // app's ActiveCall. Before this, the call screen showed "connected" the
@@ -242,12 +316,35 @@ export default function CallRoom() {
   }, [phase, remainingSec])
 
   if (phase === 'error') {
+    const isBalance = errorKind === 'balance'
+    const retry = () => {
+      setError('')
+      setErrorKind('generic')
+      setPhase('connecting')
+      setAttempt((a) => a + 1)
+    }
     return (
-      <div className="fixed inset-0 z-[70] grid place-items-center bg-ink text-white">
-        <div className="flex flex-col items-center px-6 text-center">
-          <AlertTriangle size={32} className="text-gold" />
-          <p className="mt-3 text-[16px] font-semibold">{error}</p>
-          <button onClick={() => nav(-1)} className="mt-4 rounded-xl bg-white/15 px-4 py-2 text-[14px] font-semibold">Go back</button>
+      <div className="fixed inset-0 z-[70] grid place-items-center bg-gradient-to-b from-[#3a2568] via-[#1a1236] to-[#0b0814] p-6 text-white">
+        <div className="w-full max-w-xs rounded-3xl bg-black/40 p-6 text-center backdrop-blur">
+          <span className={`mx-auto grid h-16 w-16 place-items-center rounded-full ${isBalance ? 'bg-gold/20 text-gold' : 'bg-rose-500/20 text-rose-400'}`}>
+            {isBalance ? <Wallet size={28} /> : <AlertTriangle size={28} />}
+          </span>
+          <h1 className="mt-4 text-[17px] font-bold">{isBalance ? 'Not enough balance' : "Couldn't connect this call"}</h1>
+          <p className="mt-2 text-[13px] leading-relaxed text-white/60">
+            {isBalance ? "You don't have enough balance to start this call. Add balance to continue." : error}
+          </p>
+          <div className="mt-5 flex flex-col gap-2.5">
+            {isBalance ? (
+              <Button variant="gold" className="w-full py-3" onClick={() => nav('/add-balance')}>
+                <Wallet size={15} /> Add balance
+              </Button>
+            ) : (
+              <Button className="w-full py-3" onClick={retry}>
+                <RotateCw size={15} /> Try again
+              </Button>
+            )}
+            <button onClick={() => nav(-1)} className="w-full rounded-xl bg-white/10 py-3 text-[14px] font-semibold hover:bg-white/15">Go back</button>
+          </div>
         </div>
       </div>
     )
@@ -294,9 +391,28 @@ export default function CallRoom() {
 
         {phase === 'connecting' && (
           <div className="flex flex-col items-center">
-            <div className="rounded-full border border-white/25 p-3"><Avatar id={hostId} size={150} /></div>
-            <p className="mt-5 text-[22px] font-bold">{c?.name || '…'}</p>
-            <p className="mt-1.5 flex items-center gap-2 text-[14px] text-white/70"><Loader2 size={14} className="animate-spin" /> Connecting…</p>
+            <div className="relative grid place-items-center">
+              {/* `absolute` with no inset has no offset to center via place-items
+                  (that only positions in-flow grid children) — inset-0 + m-auto
+                  centers a fixed-size absolute box reliably regardless of the
+                  parent's layout mode. */}
+              <span className="absolute inset-0 m-auto h-[168px] w-[168px] rounded-full border-2 border-white/25 animate-ringPulse" />
+              <span className="absolute inset-0 m-auto h-[168px] w-[168px] rounded-full border-2 border-white/25 animate-ringPulse [animation-delay:0.7s]" />
+              <span className="absolute inset-0 m-auto h-[168px] w-[168px] rounded-full border-2 border-white/25 animate-ringPulse [animation-delay:1.4s]" />
+              <div className="relative animate-breathe rounded-full border border-white/25 p-3">
+                <Avatar id={hostId} size={150} />
+              </div>
+            </div>
+            <p className="mt-6 text-[22px] font-bold">{c?.name || '…'}</p>
+            <p className="mt-1.5 flex items-center text-[14px] text-white/70">
+              Ringing
+              <span className="ml-0.5 inline-flex">
+                <span className="animate-dotBlink">.</span>
+                <span className="animate-dotBlink [animation-delay:0.2s]">.</span>
+                <span className="animate-dotBlink [animation-delay:0.4s]">.</span>
+              </span>
+            </p>
+            {ringSeconds > 0 && <p className="mt-1 text-[12px] text-white/40">{clock(ringSeconds)}</p>}
           </div>
         )}
 

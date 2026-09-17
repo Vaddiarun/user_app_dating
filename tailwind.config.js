@@ -47,6 +47,18 @@ export default {
           '0%': { opacity: '0' },
           '100%': { opacity: '1' },
         },
+        ringPulse: {
+          '0%': { transform: 'scale(1)', opacity: '0.55' },
+          '100%': { transform: 'scale(1.7)', opacity: '0' },
+        },
+        breathe: {
+          '0%, 100%': { transform: 'scale(1)' },
+          '50%': { transform: 'scale(1.045)' },
+        },
+        dotBlink: {
+          '0%, 80%, 100%': { opacity: '0.2' },
+          '40%': { opacity: '1' },
+        },
       },
       animation: {
         floatUp: 'floatUp 2.2s ease-out forwards',
@@ -54,6 +66,9 @@ export default {
         splashPop: 'splashPop .55s cubic-bezier(.34,1.56,.64,1) both',
         splashFadeUp: 'splashFadeUp .5s ease-out both',
         fadeIn: 'fadeIn .4s ease-out both',
+        ringPulse: 'ringPulse 2.2s cubic-bezier(0.4,0,0.6,1) infinite',
+        breathe: 'breathe 2.4s ease-in-out infinite',
+        dotBlink: 'dotBlink 1.4s ease-in-out infinite',
       },
     },
   },

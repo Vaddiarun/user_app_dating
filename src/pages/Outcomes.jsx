@@ -1,7 +1,7 @@
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import {
-  AlertTriangle, Plus, MessageSquare, Check, Ban, ShieldAlert, Flag, Loader2, Star, Gift,
+  AlertTriangle, Plus, MessageSquare, Check, Ban, ShieldAlert, Flag, Loader2, Star, Gift, Wallet, PhoneOff, Video,
 } from 'lucide-react'
 import { useApp } from '../store/AppStore'
 import { Avatar, Button, Card } from '../components/ui'
@@ -36,25 +36,68 @@ function Centered({ children }) {
   return <div className="mx-auto flex max-w-md flex-col items-center px-4 py-10 text-center">{children}</div>
 }
 
+// This screen covers every "didn't end up talking" outcome, not just running
+// out of balance — a missed/unanswered call, a host declining, a call that
+// failed to connect at all, and cancelling while still ringing all land here
+// too (see CallRoom.jsx's finish()/handleServerEnd()). It used to hardcode
+// "Your balance ran out" regardless of which of those actually happened.
+const END_REASONS = {
+  balance: {
+    icon: Wallet, tone: 'gold',
+    title: 'Your balance ran out',
+    message: (name) => `The call ended because your balance reached zero. Add balance to continue calling ${name}.`,
+  },
+  missed: {
+    icon: PhoneOff, tone: 'slate',
+    title: 'No answer',
+    message: (name) => `${name} didn't pick up this time. You can try again or explore other creators.`,
+  },
+  rejected: {
+    icon: PhoneOff, tone: 'rose',
+    title: 'Call declined',
+    message: (name) => `${name} wasn't able to take this call right now.`,
+  },
+  cancelled: {
+    icon: PhoneOff, tone: 'slate',
+    title: 'Call cancelled',
+    message: () => 'You ended the call before it connected.',
+  },
+  failed: {
+    icon: AlertTriangle, tone: 'rose',
+    title: "Call didn't connect",
+    message: () => 'Something went wrong starting this call. Please try again.',
+  },
+}
+const TONE_CLASSES = {
+  gold: 'bg-gold-soft text-gold dark:bg-gold/15',
+  rose: 'bg-rose-50 text-rose-500 dark:bg-rose-500/15',
+  slate: 'bg-gray-100 text-subtle dark:bg-white/10',
+}
+
 export function CallEnded() {
   const { id } = useParams()
   const [sp] = useSearchParams()
   const nav = useNavigate()
   const c = useHost(id)
+  const reason = END_REASONS[sp.get('reason')] || END_REASONS.failed
+  const Icon = reason.icon
+  const name = c?.name || 'this creator'
   return (
     <Centered>
-      <span className="grid h-24 w-24 place-items-center rounded-full bg-gray-100 dark:bg-white/10">
-        <span className="grid h-14 w-14 place-items-center rounded-full bg-ink text-white"><AlertTriangle size={22} /></span>
+      <span className={`grid h-24 w-24 place-items-center rounded-full ${TONE_CLASSES[reason.tone]}`}>
+        <Icon size={30} />
       </span>
-      <h1 className="mt-4 text-[19px] font-bold text-ink">Your balance ran out</h1>
-      <p className="mt-2 text-[13px] leading-relaxed text-subtle">
-        The call ended because your balance reached zero. Add balance to continue calling {c?.name || 'this creator'}.
-      </p>
+      <h1 className="mt-4 text-[19px] font-bold text-ink">{reason.title}</h1>
+      <p className="mt-2 text-[13px] leading-relaxed text-subtle">{reason.message(name)}</p>
       <Card className="mt-5 w-full p-4">
         <Row k="Duration" v={clock(+sp.get('d') || 0)} />
         <Row k="Beans used" v={<span className="text-gold">{beans(+sp.get('b') || 0)}</span>} />
       </Card>
-      <Button variant="gold" className="mt-4 w-full py-3" onClick={() => nav('/add-balance')}><Plus size={16} /> Add balance</Button>
+      {reason === END_REASONS.balance ? (
+        <Button variant="gold" className="mt-4 w-full py-3" onClick={() => nav('/add-balance')}><Plus size={16} /> Add balance</Button>
+      ) : (
+        <Button className="mt-4 w-full py-3" onClick={() => nav(`/call/${id}?mode=video`)}><Video size={16} /> Call again</Button>
+      )}
       <Button variant="outline" className="mt-3 w-full py-3" onClick={() => nav('/')}>Back to home</Button>
     </Centered>
   )
