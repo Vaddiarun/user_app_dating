@@ -134,18 +134,23 @@ export function Modal({ open, onClose, title, children, className = '' }) {
   }, [open, onClose])
   if (!open) return null
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    // z-[110]: must beat CallRoom/LiveRoom's own z-[70] full-screen overlay —
+    // a portal to document.body doesn't escape z-index comparison, so at z-50
+    // this modal was rendering *behind* the call screen's own UI whenever it
+    // was opened from inside a call (e.g. GiftPicker), making its buttons
+    // unclickable even though the modal was visually drawn on top.
+    <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={onClose} />
-      <div className={`relative w-full max-w-md rounded-2xl border border-line bg-card p-5 shadow-2xl ${className}`}>
+      <div className={`relative flex max-h-[85vh] w-full max-w-md flex-col rounded-2xl border border-line bg-card p-5 shadow-2xl ${className}`}>
         {title && (
-          <div className="mb-3 flex items-center justify-between">
+          <div className="mb-3 flex shrink-0 items-center justify-between">
             <h3 className="text-[17px] font-bold text-ink">{title}</h3>
             <button onClick={onClose} className="rounded-lg p-1 text-subtle hover:bg-gray-100 dark:hover:bg-white/10">
               <X size={18} />
             </button>
           </div>
         )}
-        {children}
+        <div className="min-h-0 overflow-y-auto">{children}</div>
       </div>
     </div>,
     document.body,
@@ -193,7 +198,10 @@ export function Skeleton({ className = '' }) {
 /* ---------------- Toast host ---------------- */
 export function ToastHost({ toasts }) {
   return createPortal(
-    <div className="fixed bottom-5 left-1/2 z-[60] flex -translate-x-1/2 flex-col items-center gap-2">
+    // z-[120]: same reasoning as Modal above — must clear CallRoom/LiveRoom's
+    // z-[70], otherwise a toast fired from inside a call (e.g. "Sent Rose")
+    // renders invisibly behind the call screen.
+    <div className="fixed bottom-5 left-1/2 z-[120] flex -translate-x-1/2 flex-col items-center gap-2">
       {toasts.map((t) => (
         <div
           key={t.id}

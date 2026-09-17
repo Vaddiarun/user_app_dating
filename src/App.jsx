@@ -52,6 +52,18 @@ function RequireGuest() {
   return <Outlet />
 }
 
+// Guards every authenticated route except the onboarding steps themselves —
+// without this, an authenticated session alone (satisfied the instant OTP
+// verifies) was enough to reach any page by URL, letting someone skip
+// straight past profile setup and age verification into the full app.
+function RequireOnboarded() {
+  const { state } = useApp()
+  const u = state.user
+  if (!u?.name || !u?.dob) return <Navigate to="/onboarding/profile" replace />
+  if (!u?.ageVerified) return <Navigate to="/onboarding/access" replace />
+  return <Outlet />
+}
+
 export default function App() {
   const { toasts } = useApp()
   return (
@@ -74,6 +86,8 @@ export default function App() {
           {/* profile-setup steps run right after verify, while the session is already authenticated */}
           <Route path="/onboarding/profile" element={<ProfileSetup />} />
           <Route path="/onboarding/access" element={<AccessConfirmed />} />
+
+          <Route element={<RequireOnboarded />}>
           <Route path="/call/:id" element={<CallRoom />} />
           <Route path="/live/:id" element={<LiveRoom />} />
 
@@ -114,6 +128,7 @@ export default function App() {
           <Route path="/report/:id" element={<ReportFlow />} />
 
           <Route path="*" element={<NotFound />} />
+          </Route>
           </Route>
         </Route>
       </Routes>

@@ -67,6 +67,28 @@ export async function joinAndPublish({ channelName, token, uid, video = true, on
   return { client, localAudioTrack, localVideoTrack, videoError }
 }
 
+/** Joins an Agora RTC channel purely to watch/listen — never acquires the local
+ * mic/camera or publishes anything. For live-broadcast viewers, who share the
+ * same 'rtc'-mode channel as the host but must never be prompted for their own
+ * camera/mic permissions just to watch. */
+export async function joinAsAudience({ channelName, token, uid, onRemoteUser } = {}) {
+  const RTC = await sdk()
+  RTC.setLogLevel(4)
+  const appId = appIdFromToken(token)
+  const client = RTC.createClient({ mode: 'rtc', codec: 'vp8' })
+
+  if (onRemoteUser) {
+    client.on('user-published', async (user, mediaType) => {
+      await client.subscribe(user, mediaType)
+      onRemoteUser(user, mediaType)
+    })
+    client.on('user-unpublished', (user, mediaType) => onRemoteUser(user, mediaType, true))
+  }
+
+  await client.join(appId, channelName, token, uid ?? null)
+  return { client }
+}
+
 // Fill the given element edge-to-edge, cropping instead of letterboxing —
 // without this Agora's default can pillarbox/letterbox a track whose aspect
 // ratio doesn't match the container, showing black bars on the sides.

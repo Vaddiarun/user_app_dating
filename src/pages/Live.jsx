@@ -7,6 +7,7 @@ import { compact, userName } from '../lib/format'
 import GiftPicker from '../components/GiftPicker'
 import Watermark from '../components/Watermark'
 import { liveApi, giftsApi, ApiError } from '../lib/api'
+import { joinAsAudience, leaveChannel, PLAY_CONFIG } from '../lib/agora'
 
 const G = [['#9b8fe0', '#5b28d6'], ['#5fc9a0', '#2f9878'], ['#e6b980', '#c9822b'], ['#d68f9b', '#9b3f5f']]
 
@@ -78,8 +79,12 @@ export function LiveRoom() {
   const [text, setText] = useState('')
   const [hearts, setHearts] = useState([])
   const [gift, setGift] = useState(false)
+  const [remoteJoined, setRemoteJoined] = useState(false)
+  const [rtcErr, setRtcErr] = useState('')
   const feedRef = useRef(null)
+  const remoteVideoRef = useRef(null)
   const joinedRef = useRef(false)
+  const sessionRef = useRef(null)
 
   useEffect(() => {
     let alive = true
@@ -89,12 +94,47 @@ export function LiveRoom() {
         if (alive) setRoom(found || null)
       })
       .catch(() => {})
-    liveApi.join(id).then(() => { joinedRef.current = true }).catch(() => {})
+    // join() also hands back this viewer's own Agora session (channelName +
+    // token) for the host's already-live channel — previously this response
+    // was discarded entirely, so the viewer never actually connected to Agora
+    // and only ever saw a static placeholder, never the real broadcast video.
+    liveApi.join(id)
+      .then((res) => {
+        joinedRef.current = true
+        if (!alive || !res?.channelName || !res?.agoraToken) return
+        joinAsAudience({
+          channelName: res.channelName,
+          token: res.agoraToken,
+          uid: state.user?.id,
+          onRemoteUser: (user, mediaType, left) => {
+            if (left) {
+              if (mediaType === 'video') setRemoteJoined(false)
+              return
+            }
+            if (mediaType === 'video') {
+              user.videoTrack?.play(remoteVideoRef.current, PLAY_CONFIG)
+              setRemoteJoined(true)
+            } else if (mediaType === 'audio') {
+              user.audioTrack?.play()
+            }
+          },
+        })
+          .then((session) => {
+            if (!alive) { leaveChannel(session); return }
+            sessionRef.current = session
+          })
+          .catch((e) => {
+            console.error('Live audience join failed:', e)
+            if (alive) setRtcErr("Couldn't connect to the broadcast. Check your connection and try again.")
+          })
+      })
+      .catch(() => {})
     return () => {
       alive = false
       if (joinedRef.current) liveApi.leave(id).catch(() => {})
+      if (sessionRef.current) leaveChannel(sessionRef.current)
     }
-  }, [id])
+  }, [id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     feedRef.current?.scrollTo({ top: feedRef.current.scrollHeight, behavior: 'smooth' })
@@ -132,9 +172,15 @@ export function LiveRoom() {
         </div>
       </div>
 
-      <div className="relative flex flex-1 items-center justify-center">
+      <div className="relative flex flex-1 items-center justify-center overflow-hidden">
         <Watermark user={state.user} />
-        <div className="h-64 w-64 rounded-full bg-white/5" />
+        <div ref={remoteVideoRef} className="absolute inset-0" />
+        {!remoteJoined && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3">
+            <div className="h-64 w-64 rounded-full bg-white/5" />
+            {rtcErr && <p className="max-w-xs px-6 text-center text-[13px] text-white/70">{rtcErr}</p>}
+          </div>
+        )}
         <div className="pointer-events-none absolute bottom-0 right-6 h-full w-16">
           {hearts.map((h) => (
             <Heart key={h.id} size={22} className="absolute bottom-4 animate-floatUp fill-rose-400 text-rose-400" style={{ left: h.x }} />

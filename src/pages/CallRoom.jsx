@@ -295,8 +295,13 @@ export default function CallRoom() {
         }
       })
       .catch((e) => {
+        // The full SDK error (e.g. "NotSupportedError: Not supported" — no
+        // getUserMedia access at all, insecure context, or no mic hardware)
+        // is logged for debugging but never shown as-is; it's not something
+        // a caller can act on. What they need is the same plain, actionable
+        // framing as the camera-only case.
         console.error('Agora join failed:', e)
-        setRtcErr(e instanceof Error ? e.message : 'Could not start the microphone for this call.')
+        setRtcErr("Couldn't access your microphone. Check mic permissions for this site and that no other app is using it.")
       })
     return () => {
       cancelled = true
@@ -379,11 +384,26 @@ export default function CallRoom() {
       <div className="relative flex flex-1 items-center justify-center">
         {phase === 'active' && <Watermark user={state.user} />}
         {mode === 'video' && phase === 'active' && (
-          <div className="absolute right-4 top-4 h-36 w-28 overflow-hidden rounded-2xl" style={{ background: 'radial-gradient(circle at 40% 35%,#7f9bd6,#4a6bb0)' }}>
+          // z-10: this renders before the full-screen remote-video block below
+          // in the DOM, and both are `position: absolute` with no stacking
+          // context of their own — without an explicit z-index, whichever one
+          // paints later (the remote video) sits on top and completely covers
+          // this smaller box the instant the host's video is actually flowing.
+          // Every earlier test only ever had one side's video active at a
+          // time, which is exactly why this never showed up until now.
+          <div className="absolute right-4 top-4 z-10 h-36 w-28 overflow-hidden rounded-2xl" style={{ background: 'radial-gradient(circle at 40% 35%,#7f9bd6,#4a6bb0)' }}>
             <div ref={localVideoRef} className="absolute inset-0" />
-            {camErr && (
-              <div className="absolute inset-0 grid place-items-center bg-black/50 p-1.5 text-center text-[9px] leading-tight text-white/85">
-                {camErr}
+            {/* This is the one place that's always about *your own* outgoing
+                media specifically — it has to stay visible regardless of
+                whether the host's video has come through. Previously the
+                fatal case (rtcErr, mic+camera both failed) only ever showed
+                inside the "!remoteJoined" panel below, which gets replaced by
+                the host's video the moment it arrives — so the one message
+                explaining "you can't be seen/heard" vanished right as it
+                became relevant, leaving an unexplained blank preview box. */}
+            {(rtcErr || camErr) && (
+              <div className="absolute inset-0 grid place-items-center bg-black/60 p-1.5 text-center text-[9px] leading-tight text-white/85">
+                {rtcErr || camErr}
               </div>
             )}
           </div>
