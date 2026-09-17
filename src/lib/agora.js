@@ -89,6 +89,21 @@ export async function joinAsAudience({ channelName, token, uid, onRemoteUser } =
   return { client }
 }
 
+/** Lists available camera input devices — used to know whether a flip-camera
+ * control has anything to switch to (most desktops only have one). */
+export async function listCameras() {
+  const RTC = await sdk()
+  return RTC.getCameras()
+}
+
+/** Switches a live local video track to a different camera device in place —
+ * the track keeps publishing under the same UID, so remote viewers see a
+ * seamless switch instead of a drop/rejoin. */
+export async function switchCamera(localVideoTrack, deviceId) {
+  if (!localVideoTrack) return
+  await localVideoTrack.setDevice(deviceId)
+}
+
 // Fill the given element edge-to-edge, cropping instead of letterboxing —
 // without this Agora's default can pillarbox/letterbox a track whose aspect
 // ratio doesn't match the container, showing black bars on the sides.

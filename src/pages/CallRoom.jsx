@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
-  Mic, MicOff, MessageSquare, Gift, PhoneOff, X, AlertTriangle, Wallet, RotateCw,
+  Mic, MicOff, MessageSquare, Gift, PhoneOff, X, AlertTriangle, Wallet, RotateCw, SwitchCamera,
 } from 'lucide-react'
 import { useApp } from '../store/AppStore'
 import { Avatar, Button } from '../components/ui'
@@ -10,7 +10,7 @@ import GiftPicker from '../components/GiftPicker'
 import Watermark from '../components/Watermark'
 import { callsApi, hostsApi, giftsApi, ApiError } from '../lib/api'
 import { normalizeHost } from '../lib/normalize'
-import { joinAndPublish, leaveChannel, PLAY_CONFIG } from '../lib/agora'
+import { joinAndPublish, leaveChannel, PLAY_CONFIG, listCameras, switchCamera } from '../lib/agora'
 import { getSocket, onSocketEvent } from '../lib/socket'
 import { startRingback } from '../lib/ringback'
 
@@ -40,6 +40,10 @@ export default function CallRoom() {
   const [rtcErr, setRtcErr] = useState('') // fatal — mic/join never came up, call has no audio at all
   const [camErr, setCamErr] = useState('') // non-fatal — camera specifically failed, audio still works
   const [remoteJoined, setRemoteJoined] = useState(false)
+  const [swapped, setSwapped] = useState(false) // which video is full-screen vs the small PIP tile
+  const [cameras, setCameras] = useState([])
+  const [camIdx, setCamIdx] = useState(0)
+  const [flipping, setFlipping] = useState(false)
 
   const [attempt, setAttempt] = useState(0)
   const endedRef = useRef(false)
@@ -311,6 +315,31 @@ export default function CallRoom() {
 
   useEffect(() => { sessionRef.current?.localAudioTrack?.setEnabled(!muted) }, [muted])
 
+  // Camera list is only fetchable once we hold a live camera permission (i.e.
+  // after the join actually acquired one) — fetching it any earlier would
+  // itself trigger a permission prompt. Most desktops only expose one camera,
+  // so the flip control only renders once there's actually something to
+  // switch to.
+  useEffect(() => {
+    if (phase !== 'active' || mode !== 'video' || !sessionRef.current?.localVideoTrack) return
+    listCameras().then(setCameras).catch(() => {})
+  }, [phase, mode, remoteJoined])
+
+  const flipCamera = async () => {
+    const track = sessionRef.current?.localVideoTrack
+    if (!track || cameras.length < 2 || flipping) return
+    setFlipping(true)
+    try {
+      const next = (camIdx + 1) % cameras.length
+      await switchCamera(track, cameras[next].deviceId)
+      setCamIdx(next)
+    } catch {
+      toast('Could not switch camera')
+    } finally {
+      setFlipping(false)
+    }
+  }
+
   const remainingSec = useMemo(() => {
     if (!call?.ratePaise || !state.wallet) return Infinity
     return Math.floor((state.wallet.balancePaise / call.ratePaise) * 60)
@@ -383,31 +412,62 @@ export default function CallRoom() {
       {/* stage */}
       <div className="relative flex flex-1 items-center justify-center">
         {phase === 'active' && <Watermark user={state.user} />}
-        {mode === 'video' && phase === 'active' && (
-          // z-10: this renders before the full-screen remote-video block below
-          // in the DOM, and both are `position: absolute` with no stacking
-          // context of their own — without an explicit z-index, whichever one
-          // paints later (the remote video) sits on top and completely covers
-          // this smaller box the instant the host's video is actually flowing.
-          // Every earlier test only ever had one side's video active at a
-          // time, which is exactly why this never showed up until now.
-          <div className="absolute right-4 top-4 z-10 h-36 w-28 overflow-hidden rounded-2xl" style={{ background: 'radial-gradient(circle at 40% 35%,#7f9bd6,#4a6bb0)' }}>
-            <div ref={localVideoRef} className="absolute inset-0" />
-            {/* This is the one place that's always about *your own* outgoing
-                media specifically — it has to stay visible regardless of
-                whether the host's video has come through. Previously the
-                fatal case (rtcErr, mic+camera both failed) only ever showed
-                inside the "!remoteJoined" panel below, which gets replaced by
-                the host's video the moment it arrives — so the one message
-                explaining "you can't be seen/heard" vanished right as it
-                became relevant, leaving an unexplained blank preview box. */}
-            {(rtcErr || camErr) && (
-              <div className="absolute inset-0 grid place-items-center bg-black/60 p-1.5 text-center text-[9px] leading-tight text-white/85">
-                {rtcErr || camErr}
+        {mode === 'video' && phase === 'active' && (() => {
+          // Whichever slot is the small PIP always gets z-10 — both boxes are
+          // `position: absolute` siblings with no stacking context of their
+          // own, so without it the one painted later would sit on top and
+          // hide the other regardless of which one is visually meant to be on top.
+          const fullClass = 'absolute inset-0'
+          const pipClass = 'absolute right-4 top-4 z-10 h-36 w-28 overflow-hidden rounded-2xl'
+          return (
+            <>
+              <div
+                onClick={() => setSwapped((s) => !s)}
+                className={swapped ? pipClass : fullClass}
+              >
+                <div ref={remoteVideoRef} className="absolute inset-0" />
+                {!remoteJoined && (
+                  <div className="absolute inset-0 grid place-items-center">
+                    {rtcErr ? (
+                      <p className="max-w-[240px] px-8 text-center text-[13px] text-white/60">{rtcErr}</p>
+                    ) : (
+                      <div className={swapped ? 'h-16 w-16 rounded-full bg-white/5' : 'h-64 w-64 rounded-full bg-white/5'} />
+                    )}
+                  </div>
+                )}
               </div>
-            )}
-          </div>
-        )}
+
+              <div
+                onClick={() => setSwapped((s) => !s)}
+                className={swapped ? fullClass : pipClass}
+                style={!swapped ? { background: 'radial-gradient(circle at 40% 35%,#7f9bd6,#4a6bb0)' } : undefined}
+              >
+                <div ref={localVideoRef} className="absolute inset-0" />
+                {/* This is the one place that's always about *your own* outgoing
+                    media specifically — it has to stay visible regardless of
+                    whether the host's video has come through. */}
+                {(rtcErr || camErr) && (
+                  <div className={`absolute inset-0 grid place-items-center bg-black/60 text-center text-white/85 ${swapped ? 'p-6 text-[13px]' : 'p-1.5 text-[9px] leading-tight'}`}>
+                    {rtcErr || camErr}
+                  </div>
+                )}
+                {cameras.length > 1 && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); flipCamera() }}
+                    disabled={flipping}
+                    className={
+                      swapped
+                        ? 'absolute bottom-20 right-4 grid h-11 w-11 place-items-center rounded-full bg-black/45 text-white disabled:opacity-50'
+                        : 'absolute bottom-1 right-1 grid h-6 w-6 place-items-center rounded-full bg-black/50 text-white disabled:opacity-50'
+                    }
+                  >
+                    <SwitchCamera size={swapped ? 20 : 13} />
+                  </button>
+                )}
+              </div>
+            </>
+          )
+        })()}
 
         {phase === 'connecting' && (
           <div className="flex flex-col items-center">
@@ -436,27 +496,12 @@ export default function CallRoom() {
           </div>
         )}
 
-        {phase === 'active' && (
-          mode !== 'video' ? (
-            <div className="flex flex-col items-center">
-              <div className="rounded-full border border-white/20 p-2"><Avatar id={hostId} size={150} /></div>
-              <p className="mt-4 text-[20px] font-bold">{c?.name}</p>
-              {rtcErr && <p className="mt-2 max-w-[240px] text-center text-[12px] text-white/60">{rtcErr}</p>}
-            </div>
-          ) : (
-            <div className="absolute inset-0">
-              <div ref={remoteVideoRef} className="absolute inset-0" />
-              {!remoteJoined && (
-                <div className="absolute inset-0 grid place-items-center">
-                  {rtcErr ? (
-                    <p className="max-w-[240px] px-8 text-center text-[13px] text-white/60">{rtcErr}</p>
-                  ) : (
-                    <div className="h-64 w-64 rounded-full bg-white/5" />
-                  )}
-                </div>
-              )}
-            </div>
-          )
+        {phase === 'active' && mode !== 'video' && (
+          <div className="flex flex-col items-center">
+            <div className="rounded-full border border-white/20 p-2"><Avatar id={hostId} size={150} /></div>
+            <p className="mt-4 text-[20px] font-bold">{c?.name}</p>
+            {rtcErr && <p className="mt-2 max-w-[240px] text-center text-[12px] text-white/60">{rtcErr}</p>}
+          </div>
         )}
 
         {showChat && phase === 'active' && (
