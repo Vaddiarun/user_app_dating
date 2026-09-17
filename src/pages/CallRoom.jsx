@@ -10,8 +10,9 @@ import GiftPicker from '../components/GiftPicker'
 import Watermark from '../components/Watermark'
 import { callsApi, hostsApi, giftsApi, ApiError } from '../lib/api'
 import { normalizeHost } from '../lib/normalize'
-import { joinAndPublish, leaveChannel } from '../lib/agora'
+import { joinAndPublish, leaveChannel, PLAY_CONFIG } from '../lib/agora'
 import { getSocket, onSocketEvent } from '../lib/socket'
+import { startRingback } from '../lib/ringback'
 
 const POLL_MS = 5000
 // The backend's real call_status enum (calls.status) — ringing/ongoing are
@@ -34,7 +35,8 @@ export default function CallRoom() {
   const [showChat, setShowChat] = useState(false)
   const [gift, setGift] = useState(false)
   const [chatLog, setChatLog] = useState([])
-  const [rtcErr, setRtcErr] = useState('')
+  const [rtcErr, setRtcErr] = useState('') // fatal — mic/join never came up, call has no audio at all
+  const [camErr, setCamErr] = useState('') // non-fatal — camera specifically failed, audio still works
   const [remoteJoined, setRemoteJoined] = useState(false)
 
   const endedRef = useRef(false)
@@ -172,6 +174,13 @@ export default function CallRoom() {
     return () => clearInterval(iv)
   }, [phase])
 
+  // ringback tone while waiting for the host to accept
+  useEffect(() => {
+    if (phase !== 'connecting') return
+    const stop = startRingback()
+    return stop
+  }, [phase])
+
   // Real Agora join, once the host has actually answered — mirrors the host
   // app's ActiveCall. Before this, the call screen showed "connected" the
   // moment it opened with no real audio/video ever established.
@@ -186,18 +195,23 @@ export default function CallRoom() {
       onRemoteUser: (user, mediaType, left) => {
         if (mediaType !== 'video') return
         if (left) { setRemoteJoined(false); return }
-        user.videoTrack?.play(remoteVideoRef.current)
+        user.videoTrack?.play(remoteVideoRef.current, PLAY_CONFIG)
         setRemoteJoined(true)
       },
     })
       .then((session) => {
         if (cancelled) { leaveChannel(session); return }
         sessionRef.current = session
-        session.localVideoTrack?.play(localVideoRef.current)
+        if (session.localVideoTrack) {
+          session.localVideoTrack.play(localVideoRef.current, PLAY_CONFIG)
+        } else if (session.videoError && mode === 'video') {
+          // Audio still published fine (see lib/agora.js) — only the camera failed.
+          setCamErr("Camera unavailable — check permissions or close other apps using it.")
+        }
       })
       .catch((e) => {
         console.error('Agora join failed:', e)
-        setRtcErr(e instanceof Error ? e.message : 'Could not start the camera/mic for this call.')
+        setRtcErr(e instanceof Error ? e.message : 'Could not start the microphone for this call.')
       })
     return () => {
       cancelled = true
@@ -259,6 +273,11 @@ export default function CallRoom() {
         {mode === 'video' && phase === 'active' && (
           <div className="absolute right-4 top-4 h-36 w-28 overflow-hidden rounded-2xl" style={{ background: 'radial-gradient(circle at 40% 35%,#7f9bd6,#4a6bb0)' }}>
             <div ref={localVideoRef} className="absolute inset-0" />
+            {camErr && (
+              <div className="absolute inset-0 grid place-items-center bg-black/50 p-1.5 text-center text-[9px] leading-tight text-white/85">
+                {camErr}
+              </div>
+            )}
           </div>
         )}
 

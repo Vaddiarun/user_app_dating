@@ -46,12 +46,31 @@ export async function joinAndPublish({ channelName, token, uid, video = true, on
 
   await client.join(appId, channelName, token, uid ?? null)
 
+  // Mic and camera are acquired independently — a camera failure (permission
+  // timing, already in use by another app/tab, no device at all) must not take
+  // audio down with it. Previously this was one sequential `await` chain: if
+  // createCameraVideoTrack() rejected, the whole join rejected, nothing ever
+  // published, and the user only ever saw the *other* participant (whose stream
+  // arrives independently of whether this side published anything).
   const localAudioTrack = await RTC.createMicrophoneAudioTrack()
-  const localVideoTrack = video ? await RTC.createCameraVideoTrack() : null
+  let localVideoTrack = null
+  let videoError = null
+  if (video) {
+    try {
+      localVideoTrack = await RTC.createCameraVideoTrack()
+    } catch (e) {
+      videoError = e
+    }
+  }
   await client.publish([localAudioTrack, localVideoTrack].filter(Boolean))
 
-  return { client, localAudioTrack, localVideoTrack }
+  return { client, localAudioTrack, localVideoTrack, videoError }
 }
+
+// Fill the given element edge-to-edge, cropping instead of letterboxing —
+// without this Agora's default can pillarbox/letterbox a track whose aspect
+// ratio doesn't match the container, showing black bars on the sides.
+export const PLAY_CONFIG = { fit: 'cover' }
 
 export async function leaveChannel({ client, localAudioTrack, localVideoTrack } = {}) {
   try {
