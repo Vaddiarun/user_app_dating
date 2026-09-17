@@ -161,6 +161,8 @@ export function AppProvider({ children }) {
     retryBoot: loadProfile,
     async login({ accessToken, refreshToken, userId }) {
       setSession({ accessToken, refreshToken, userId })
+      // Returned so the post-verify screen can tell a returning, already-set-up
+      // account from a brand-new signup and skip onboarding accordingly.
       return loadProfile()
     },
     async logout() {

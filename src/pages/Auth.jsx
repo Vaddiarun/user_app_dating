@@ -227,16 +227,24 @@ export function Otp() {
     setBusy(true)
     setError('')
     try {
+      // The backend looks this phone number up scoped to role "user"
+      // specifically (users table is unique per phone+role, not phone
+      // alone) — a phone already used on the Host app has a separate Host
+      // account this can never return or escalate into. It either logs
+      // into this phone's own User account or creates one; either way the
+      // result is always role "user".
       const res = await authApi.verifyOtp(phone, code, 'user')
       const restriction = getRestriction(res.user?.id)
       if (restriction) {
-        nav('/account-restricted', { state: { caseRef: restriction.caseRef } })
+        nav('/account-restricted', { state: { caseRef: restriction.caseRef }, replace: true })
         return
       }
       const user = await actions.login({ accessToken: res.accessToken, refreshToken: res.refreshToken, userId: res.user?.id })
-      // Returning users who already finished onboarding shouldn't be walked
-      // through "set up profile" / "access confirmed" on every single login.
-      nav(user?.name && user?.dob ? '/' : '/onboarding/profile')
+      // OTP verify succeeds the same way for a brand-new signup and a returning
+      // account (an existing phone number just logs the account back in) — only
+      // an account that never finished profile setup (no name and dob on file yet)
+      // should be sent through onboarding again.
+      nav(user?.name && user?.dob ? '/' : '/onboarding/profile', { replace: true })
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Invalid code. Try again.')
     } finally {
