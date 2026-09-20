@@ -8,6 +8,7 @@ import GiftPicker from '../components/GiftPicker'
 import Watermark from '../components/Watermark'
 import { liveApi, giftsApi, ApiError } from '../lib/api'
 import { joinAsAudience, leaveChannel, PLAY_CONFIG } from '../lib/agora'
+import { getSocket, onSocketEvent } from '../lib/socket'
 
 const G = [['#9b8fe0', '#5b28d6'], ['#5fc9a0', '#2f9878'], ['#e6b980', '#c9822b'], ['#d68f9b', '#9b3f5f']]
 
@@ -85,6 +86,8 @@ export function LiveRoom() {
   const remoteVideoRef = useRef(null)
   const joinedRef = useRef(false)
   const sessionRef = useRef(null)
+  const joinKeyRef = useRef(null)
+  const joinPromiseRef = useRef(null)
 
   useEffect(() => {
     let alive = true
@@ -98,10 +101,20 @@ export function LiveRoom() {
     // token) for the host's already-live channel — previously this response
     // was discarded entirely, so the viewer never actually connected to Agora
     // and only ever saw a static placeholder, never the real broadcast video.
-    liveApi.join(id)
+    //
+    // React StrictMode's dev-only mount→cleanup→remount cycle would otherwise
+    // fire a second real POST .../join for the same broadcast — sharing one
+    // promise across every effect invocation (same fix as CallRoom's call
+    // initiation) keeps it to exactly one real join per broadcast.
+    if (joinKeyRef.current !== id) {
+      joinKeyRef.current = id
+      joinPromiseRef.current = liveApi.join(id)
+    }
+    joinPromiseRef.current
       .then((res) => {
+        if (!alive) return
         joinedRef.current = true
-        if (!alive || !res?.channelName || !res?.agoraToken) return
+        if (!res?.channelName || !res?.agoraToken) return
         joinAsAudience({
           channelName: res.channelName,
           token: res.agoraToken,
@@ -140,6 +153,30 @@ export function LiveRoom() {
     feedRef.current?.scrollTo({ top: feedRef.current.scrollHeight, behavior: 'smooth' })
   }, [msgs.length])
 
+  // Incoming chat from everyone else in the room — the host included. Without
+  // this, `msgs` only ever grew from this viewer's own sends, so nothing the
+  // host (or anyone else) said ever showed up here at all.
+  useEffect(() => {
+    let cancelled = false
+    const unsubs = []
+    const attach = () => {
+      const socket = getSocket()
+      if (!socket) {
+        if (!cancelled) setTimeout(attach, 300)
+        return
+      }
+      unsubs.push(onSocketEvent('live:chat', (payload) => {
+        if (payload?.broadcastId !== id || payload?.senderId === state.user?.id) return
+        setMsgs((m) => [...m, { id: `${payload.senderId}-${payload.createdAt}`, n: payload.senderName || 'Someone', t: payload.content }])
+      }))
+    }
+    attach()
+    return () => {
+      cancelled = true
+      unsubs.forEach((u) => u())
+    }
+  }, [id]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const addHeart = () => {
     const h = { id: Date.now() + Math.random(), x: 10 + Math.random() * 40 }
     setHearts((hs) => [...hs, h])
@@ -151,16 +188,58 @@ export function LiveRoom() {
     if (!t) return
     setText('')
     setMsgs((m) => [...m, { id: Date.now(), n: userName(state.user), t }])
-    try { await liveApi.chat(id, t) } catch { toast('Could not send message') }
+    try {
+      await liveApi.chat(id, t)
+    } catch (err) {
+      // The backend can consider a viewer "left" the broadcast (an idle
+      // reconnect, a token refresh mid-session, anything that drops and
+      // re-establishes the connection) even though this tab never navigated
+      // away and is still showing the live video just fine — so a chat send
+      // can fail with "Join the broadcast before chatting in it" despite the
+      // viewer clearly still watching. Rejoin once and retry before giving up,
+      // rather than surfacing a confusing error for something the app itself
+      // can silently recover from.
+      if (err instanceof ApiError && /join the broadcast/i.test(err.message)) {
+        try {
+          await liveApi.join(id)
+          joinedRef.current = true
+          await liveApi.chat(id, t)
+          return
+        } catch { /* fall through to the toast below */ }
+      }
+      toast('Could not send message')
+    }
   }
 
   return (
     <div
-      className="fixed inset-0 z-[70] flex select-none flex-col overflow-hidden text-white"
+      className="fixed inset-0 z-[70] select-none overflow-hidden text-white"
       style={{ background: 'linear-gradient(180deg,#3a2568 0%,#1a1236 50%,#0b0814 100%)' }}
       onContextMenu={(e) => e.preventDefault()}
     >
-      <div className="flex items-center justify-between px-4 pt-4">
+      {/* Video is the full-screen background layer, not a shrunk middle strip
+          between the header and a permanently-reserved chat panel — everything
+          else here is an absolutely-positioned overlay on top of it, the way
+          Instagram/TikTok-style live UIs actually lay out (previously the
+          header + a fixed-height chat feed + the input row were all normal
+          flow siblings competing for vertical space with the video, so the
+          broadcast rendered into a much shorter box than the actual screen —
+          which, combined with Agora's default 'cover' crop on remote video,
+          made it look zoomed into a narrow slice of the frame instead of
+          filling the screen). */}
+      <div ref={remoteVideoRef} className="absolute inset-0" />
+      {!remoteJoined && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center gap-3">
+          <div className="h-64 w-64 rounded-full bg-white/5" />
+          {rtcErr && <p className="max-w-xs px-6 text-center text-[13px] text-white/70">{rtcErr}</p>}
+        </div>
+      )}
+      <Watermark user={state.user} />
+
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-28 bg-gradient-to-b from-black/60 to-transparent" />
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-64 bg-gradient-to-t from-black/70 to-transparent" />
+
+      <div className="absolute inset-x-0 top-0 z-10 flex items-center justify-between px-4 pt-4">
         <button onClick={() => nav(room?.hostId ? `/creator/${room.hostId}` : '/live')} className="flex items-center gap-2 rounded-full bg-black/35 px-2 py-1.5">
           <Avatar id={room?.hostId || id} size={22} />
           <span className="text-[13px] font-semibold">{room?.hostName || '…'}</span>
@@ -172,23 +251,13 @@ export function LiveRoom() {
         </div>
       </div>
 
-      <div className="relative flex flex-1 items-center justify-center overflow-hidden">
-        <Watermark user={state.user} />
-        <div ref={remoteVideoRef} className="absolute inset-0" />
-        {!remoteJoined && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3">
-            <div className="h-64 w-64 rounded-full bg-white/5" />
-            {rtcErr && <p className="max-w-xs px-6 text-center text-[13px] text-white/70">{rtcErr}</p>}
-          </div>
-        )}
-        <div className="pointer-events-none absolute bottom-0 right-6 h-full w-16">
-          {hearts.map((h) => (
-            <Heart key={h.id} size={22} className="absolute bottom-4 animate-floatUp fill-rose-400 text-rose-400" style={{ left: h.x }} />
-          ))}
-        </div>
+      <div className="pointer-events-none absolute bottom-24 right-6 z-10 h-64 w-16">
+        {hearts.map((h) => (
+          <Heart key={h.id} size={22} className="absolute bottom-0 animate-floatUp fill-rose-400 text-rose-400" style={{ left: h.x }} />
+        ))}
       </div>
 
-      <div ref={feedRef} className="thin-scroll max-h-44 space-y-1.5 overflow-y-auto px-4">
+      <div ref={feedRef} className="thin-scroll absolute inset-x-0 bottom-[4.75rem] z-10 max-h-44 space-y-1.5 overflow-y-auto px-4">
         {msgs.length === 0 && <p className="text-[13px] text-white/50">Say something to join the conversation</p>}
         {msgs.map((m) => (
           <div key={m.id} className="w-fit rounded-full bg-black/40 px-3 py-1.5 text-[13px]">
@@ -197,7 +266,7 @@ export function LiveRoom() {
         ))}
       </div>
 
-      <div className="flex items-center gap-2 p-3 pb-6">
+      <div className="absolute inset-x-0 bottom-0 z-10 flex items-center gap-2 p-3 pb-6">
         <input
           value={text}
           onChange={(e) => setText(e.target.value)}
