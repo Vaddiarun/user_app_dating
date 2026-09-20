@@ -39,7 +39,7 @@ export default function Live() {
   }
 
   return (
-    <div className="mx-auto max-w-6xl">
+    <div>
       <h1 className="text-[22px] font-extrabold tracking-tight text-ink">Live now</h1>
 
       {error ? (
@@ -47,7 +47,7 @@ export default function Live() {
       ) : rooms.length === 0 ? (
         <EmptyState icon={<Radio size={28} />} tone="gold" title="No one is live right now" text="Check back soon — live sessions show up here as soon as a creator starts one." />
       ) : (
-        <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
           {rooms.map((r, i) => (
             <button key={r.id} onClick={() => nav(`/live/${r.id}`)} className="text-left">
               <GradientBox from={G[i % G.length][0]} to={G[i % G.length][1]} seed={i} className="aspect-video rounded-2xl">

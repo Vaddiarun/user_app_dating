@@ -50,7 +50,7 @@ export default function AppShell({ children }) {
   }
 
   return (
-    <div className="mx-auto flex min-h-screen w-full max-w-[1400px]">
+    <div className="mx-auto flex min-h-screen w-full max-w-[1800px]">
       {/* Sidebar (desktop) */}
       <aside className="sticky top-0 hidden h-screen w-60 shrink-0 flex-col border-r border-line bg-card px-3 py-5 lg:flex">
         <Brand />

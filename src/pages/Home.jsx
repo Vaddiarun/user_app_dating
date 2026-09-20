@@ -49,7 +49,7 @@ export default function Home() {
   )
 
   return (
-    <div className="mx-auto max-w-6xl">
+    <div>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-[22px] font-extrabold tracking-tight text-ink">
@@ -63,7 +63,7 @@ export default function Home() {
       </div>
 
       {loading ? (
-        <div className="mt-5 grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-4">
+        <div className="mt-5 grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
           {Array.from({ length: 8 }).map((_, i) => (
             <div key={i}>
               <Skeleton className="aspect-[4/5] w-full" />
@@ -85,7 +85,7 @@ export default function Home() {
           <Button onClick={() => setTab('All')}>Go to All</Button>
         </EmptyState>
       ) : (
-        <div className="mt-5 grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-4">
+        <div className="mt-5 grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
           {list.map((c, i) => (
             <CreatorCard key={c.id} c={c} seed={i} onCall={() => setCallFor(c)} />
           ))}
