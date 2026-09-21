@@ -51,6 +51,14 @@ export function userName(user) {
   return 'User'
 }
 
+// A short, non-reversible-looking fragment of a UUID for burning into a
+// watermark — the full id is unnecessary for tracing a leak back to an
+// account and is needlessly long for an on-video overlay.
+export function shortRef(id) {
+  if (!id) return '——'
+  return String(id).replace(/-/g, '').slice(-6).toUpperCase()
+}
+
 export function userHandle(user) {
   if (!user) return ''
   if (user.username?.trim()) return `@${user.username.trim()}`

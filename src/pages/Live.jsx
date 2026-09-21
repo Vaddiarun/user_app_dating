@@ -207,7 +207,7 @@ export function LiveRoom() {
           return
         } catch { /* fall through to the toast below */ }
       }
-      toast('Could not send message')
+      toast('Could not send message', { tone: 'error' })
     }
   }
 
@@ -283,7 +283,7 @@ export function LiveRoom() {
           balance={state.wallet?.balancePaise ?? 0}
           onClose={() => setGift(false)}
           onSend={async (g) => {
-            if (!state.wallet || state.wallet.balancePaise < g.pricePaise) { toast('Not enough balance'); throw new Error('insufficient') }
+            if (!state.wallet || state.wallet.balancePaise < g.pricePaise) { toast('Not enough balance', { tone: 'error' }); throw new Error('insufficient') }
             await giftsApi.send(room?.hostId || id, g.id, 'live', id)
             await actions.refreshWallet()
             setGift(false)

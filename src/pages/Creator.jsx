@@ -58,14 +58,14 @@ export default function Creator() {
       if (following) { await actions.unfollow(c.id); toast(`Unfollowed ${c.name}`) }
       else { await actions.follow(c.id); toast(`Following ${c.name}`) }
     } catch {
-      toast('Could not update follow status')
+      toast('Could not update follow status', { tone: 'error' })
     } finally {
       setFollowBusy(false)
     }
   }
 
   const sendGift = async (g) => {
-    if (!state.wallet || state.wallet.balancePaise < g.pricePaise) { toast('Not enough balance'); throw new Error('insufficient') }
+    if (!state.wallet || state.wallet.balancePaise < g.pricePaise) { toast('Not enough balance', { tone: 'error' }); throw new Error('insufficient') }
     await giftsApi.send(c.id, g.id, 'profile')
     await actions.refreshWallet()
     setGift(false)

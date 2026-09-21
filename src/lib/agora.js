@@ -96,12 +96,30 @@ export async function listCameras() {
   return RTC.getCameras()
 }
 
-/** Switches a live local video track to a different camera device in place —
- * the track keeps publishing under the same UID, so remote viewers see a
- * seamless switch instead of a drop/rejoin. */
-export async function switchCamera(localVideoTrack, deviceId) {
-  if (!localVideoTrack) return
-  await localVideoTrack.setDevice(deviceId)
+/** Switches the local camera between front ('user') and back ('environment')
+ * by recreating the video track with an explicit facingMode constraint and
+ * re-publishing it in place, instead of cycling through `getCameras()`'s
+ * device list by deviceId. deviceId-based cycling is unreliable specifically
+ * for a front/back toggle: enumeration order isn't guaranteed to alternate
+ * front/back (some phones expose extra lenses — wide, macro, tele — as
+ * separate "camera" devices), and iOS Safari in particular doesn't reliably
+ * label devices as front/back at all. facingMode is the browser-standard
+ * constraint built for exactly this and is honored consistently by both
+ * Android Chrome and iOS Safari even when device labels aren't. */
+export async function switchCameraFacing(client, track, facingMode) {
+  const RTC = await sdk()
+  const newTrack = await RTC.createCameraVideoTrack({ facingMode })
+  try {
+    if (track) {
+      await client.unpublish(track)
+      track.stop()
+      track.close()
+    }
+  } catch {
+    // best-effort cleanup of the old track — proceed regardless
+  }
+  await client.publish(newTrack)
+  return newTrack
 }
 
 // Fill the given element edge-to-edge, cropping instead of letterboxing —

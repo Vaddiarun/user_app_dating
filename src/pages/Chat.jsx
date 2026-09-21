@@ -176,14 +176,14 @@ function Conversation({ hostId, conversationId: initialConvId }) {
       setMessages((m) => [...m, { id: `local-${Date.now()}`, mine: true, text: t, ts: Date.now() }])
       loadMessages(cid)
     } catch (err) {
-      toast(err instanceof ApiError ? err.message : 'Could not send message')
+      toast(err instanceof ApiError ? err.message : 'Could not send message', { tone: 'error' })
     } finally {
       setSending(false)
     }
   }
 
   const sendGift = async (g) => {
-    if (!state.wallet || state.wallet.balancePaise < g.pricePaise) { toast('Not enough balance'); throw new Error('insufficient') }
+    if (!state.wallet || state.wallet.balancePaise < g.pricePaise) { toast('Not enough balance', { tone: 'error' }); throw new Error('insufficient') }
     await giftsApi.send(hostId, g.id, 'chat', conversationId)
     await actions.refreshWallet()
     setGift(false)

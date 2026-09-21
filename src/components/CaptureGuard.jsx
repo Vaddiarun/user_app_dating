@@ -14,9 +14,16 @@ import { registerStrike, markRestricted, STRIKE_LIMIT } from '../lib/captureStri
 // real API, warn with escalating severity, and lock the account out on this
 // device after repeated attempts (see lib/captureStrikes.js for what that
 // enforcement actually is and isn't). Mounted once at the app root.
+// The backend's capture-event endpoint validates `context` against a strict
+// enum — call | chat | live, nothing else — so anything outside those three
+// screens has no valid value to send at all (not even a generic "app"; that
+// used to be sent here and the backend rejected every single one of those
+// requests with a 400, silently, since the request is fire-and-forget).
 function contextFromPath(pathname) {
-  const m = pathname.match(/^\/(call|live)\/([^/]+)/)
-  return m ? { context: m[1], contextId: m[2] } : { context: 'app', contextId: undefined }
+  const call = pathname.match(/^\/(call|live)\/([^/]+)/)
+  if (call) return { context: call[1], contextId: call[2] }
+  if (/^\/chat(\/|$)/.test(pathname)) return { context: 'chat', contextId: pathname.split('/')[2] }
+  return null
 }
 
 export default function CaptureGuard() {
@@ -29,8 +36,8 @@ export default function CaptureGuard() {
   useEffect(() => {
     const onKeyDown = (e) => {
       if (e.key !== 'PrintScreen') return
-      const { context, contextId } = contextFromPath(location.pathname)
-      moderationApi.captureEvent(context, contextId).catch(() => {})
+      const ctx = contextFromPath(location.pathname)
+      if (ctx) moderationApi.captureEvent(ctx.context, ctx.contextId).catch(() => {})
 
       const count = registerStrike(userId)
       if (count >= STRIKE_LIMIT) {

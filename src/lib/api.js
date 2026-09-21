@@ -211,6 +211,7 @@ export const giftsApi = {
   catalog: () => request('/gifts'),
   send: (recipientId, giftId, context, contextId) =>
     request('/gifts/send', { method: 'POST', body: { recipientId, giftId, context, contextId } }),
+  declineRequest: (hostId) => request('/gifts/request/decline', { method: 'POST', body: { hostId } }),
 }
 
 /* ---------------- Live Broadcasting ---------------- */

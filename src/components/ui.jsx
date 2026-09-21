@@ -205,7 +205,9 @@ export function ToastHost({ toasts }) {
       {toasts.map((t) => (
         <div
           key={t.id}
-          className="pointer-events-none rounded-full bg-ink px-4 py-2 text-[13px] font-medium text-white shadow-lg"
+          className={`pointer-events-none rounded-full px-4 py-2 text-[13px] font-medium text-white shadow-lg ${
+            t.tone === 'error' ? 'bg-rose-600' : 'bg-ink'
+          }`}
         >
           {t.msg}
         </div>

@@ -124,7 +124,7 @@ export function BlockedCreators() {
               <p className="text-[15px] font-semibold text-ink">{b.name}</p>
             </div>
             <Button variant="outline" size="sm" onClick={async () => {
-              try { await actions.unblock(b.id); toast(`${b.name} unblocked`) } catch { toast('Could not unblock') }
+              try { await actions.unblock(b.id); toast(`${b.name} unblocked`) } catch { toast('Could not unblock', { tone: 'error' }) }
             }}>
               Unblock
             </Button>
@@ -241,7 +241,7 @@ export function Vip() {
       toast('Welcome to VIP 👑')
       nav('/profile')
     } catch (err) {
-      toast(err instanceof ApiError ? err.message : 'Could not subscribe')
+      toast(err instanceof ApiError ? err.message : 'Could not subscribe', { tone: 'error' })
     } finally {
       setBusy(false)
     }
@@ -298,7 +298,7 @@ export function Subscriptions() {
   const cancel = async (id) => {
     setBusyId(id)
     try { await vipApi.cancel(id); toast('Subscription set to cancel at period end'); load() }
-    catch { toast('Could not cancel subscription') }
+    catch { toast('Could not cancel subscription', { tone: 'error' }) }
     finally { setBusyId(null) }
   }
 
@@ -354,7 +354,7 @@ export function Languages() {
       await actions.refreshUser()
       toast('Preferences saved')
     } catch {
-      toast('Could not save preferences')
+      toast('Could not save preferences', { tone: 'error' })
     } finally {
       setBusy(false)
     }
@@ -396,7 +396,7 @@ export function NotificationSettings() {
   const flip = async (key, value) => {
     setSaving(key)
     try { await actions.updateNotifPrefs({ [key]: value }) }
-    catch { toast('Could not save preference') }
+    catch { toast('Could not save preference', { tone: 'error' }) }
     finally { setSaving(null) }
   }
 

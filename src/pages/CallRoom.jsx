@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
-  Mic, MicOff, MessageSquare, Gift, PhoneOff, X, AlertTriangle, Wallet, RotateCw, SwitchCamera,
+  Mic, MicOff, MessageSquare, Gift, PhoneOff, X, AlertTriangle, Wallet, RotateCw, SwitchCamera, HeartHandshake,
 } from 'lucide-react'
 import { useApp } from '../store/AppStore'
 import { Avatar, Button } from '../components/ui'
@@ -9,10 +9,11 @@ import { clock } from '../lib/format'
 import GiftPicker from '../components/GiftPicker'
 import Watermark from '../components/Watermark'
 import { callsApi, hostsApi, giftsApi, ApiError } from '../lib/api'
-import { normalizeHost } from '../lib/normalize'
-import { joinAndPublish, leaveChannel, PLAY_CONFIG, listCameras, switchCamera } from '../lib/agora'
+import { normalizeHost, normalizeGift } from '../lib/normalize'
+import { joinAndPublish, leaveChannel, PLAY_CONFIG, listCameras, switchCameraFacing } from '../lib/agora'
 import { getSocket, onSocketEvent } from '../lib/socket'
 import { startRingback } from '../lib/ringback'
+import { logSecurityEvent, isDisplayCaptureApiSupported } from '../lib/security'
 
 const POLL_MS = 5000
 // The backend's real call_status enum (calls.status) — ringing/ongoing are
@@ -42,8 +43,11 @@ export default function CallRoom() {
   const [remoteJoined, setRemoteJoined] = useState(false)
   const [swapped, setSwapped] = useState(false) // which video is full-screen vs the small PIP tile
   const [cameras, setCameras] = useState([])
-  const [camIdx, setCamIdx] = useState(0)
+  const [facing, setFacing] = useState('user')
   const [flipping, setFlipping] = useState(false)
+  const [pageHidden, setPageHidden] = useState(false)
+  const [pipDragPos, setPipDragPos] = useState(null) // {x,y} px within the stage once dragged; null = default corner
+  const [giftRequest, setGiftRequest] = useState(null) // { gift: normalizedGift|null, sending }
 
   const [attempt, setAttempt] = useState(0)
   const endedRef = useRef(false)
@@ -59,6 +63,9 @@ export default function CallRoom() {
   const sessionRef = useRef(null)
   const remoteVideoRef = useRef(null)
   const localVideoRef = useRef(null)
+  const stageRef = useRef(null)
+  const pipRef = useRef(null)
+  const pipDragRef = useRef({ dragging: false, pointerId: null, startClientX: 0, startClientY: 0, startX: 0, startY: 0, moved: 0 })
 
   // set up: fetch host (for name/avatar/rate) + initiate the call. The backend
   // hands back this user's own Agora channel/token right here (POST /calls) —
@@ -197,6 +204,22 @@ export default function CallRoom() {
         if (payload?.callId !== call.callId) return
         handleServerEnd(payload?.status, payload?.totalBeans)
       }))
+      // The host asking for a gift mid-call — the event only carries hostId
+      // (no callId), so it's scoped to "this call's host" instead; a user is
+      // only ever in one call at a time, so that's an unambiguous match.
+      unsubs.push(onSocketEvent('gift:requested', (payload) => {
+        if (payload?.hostId !== hostId) return
+        const giftId = payload?.suggestedGiftId
+        if (!giftId) { setGiftRequest({ gift: null, sending: false }); return }
+        setGiftRequest({ gift: null, sending: false })
+        giftsApi.catalog()
+          .then((res) => {
+            const list = (res.gifts || res || []).map(normalizeGift)
+            const match = list.find((g) => g.id === giftId) || null
+            setGiftRequest((cur) => (cur ? { ...cur, gift: match } : cur))
+          })
+          .catch(() => {})
+      }))
     }
     attach()
     return () => {
@@ -326,19 +349,140 @@ export default function CallRoom() {
   }, [phase, mode, remoteJoined])
 
   const flipCamera = async () => {
-    const track = sessionRef.current?.localVideoTrack
-    if (!track || cameras.length < 2 || flipping) return
+    const session = sessionRef.current
+    if (!session?.client || flipping) return
     setFlipping(true)
     try {
-      const next = (camIdx + 1) % cameras.length
-      await switchCamera(track, cameras[next].deviceId)
-      setCamIdx(next)
+      const next = facing === 'user' ? 'environment' : 'user'
+      const newTrack = await switchCameraFacing(session.client, session.localVideoTrack, next)
+      session.localVideoTrack = newTrack
+      newTrack.play(localVideoRef.current, PLAY_CONFIG)
+      setFacing(next)
     } catch {
-      toast('Could not switch camera')
+      toast('Could not switch camera', { tone: 'error' })
     } finally {
       setFlipping(false)
     }
   }
+
+  // WhatsApp-style freely-draggable PIP. Pointer Events (not separate mouse/
+  // touch handlers) cover mouse, touch, and pen in one code path. Position is
+  // tracked as {x,y} pixel offsets relative to the stage container, computed
+  // fresh from getBoundingClientRect() at drag time so it stays correct
+  // across rotation/resizes and whether the low-balance banner is currently
+  // taking up space at the bottom of the stage.
+  const TAP_THRESHOLD_PX = 4
+  const DRAG_MARGIN = 8
+
+  const clampPipPos = (x, y) => {
+    const stage = stageRef.current
+    const pip = pipRef.current
+    if (!stage || !pip) return { x, y }
+    const stageRect = stage.getBoundingClientRect()
+    const pipRect = pip.getBoundingClientRect()
+    const maxX = Math.max(DRAG_MARGIN, stageRect.width - pipRect.width - DRAG_MARGIN)
+    const maxY = Math.max(DRAG_MARGIN, stageRect.height - pipRect.height - DRAG_MARGIN)
+    return { x: Math.min(Math.max(x, DRAG_MARGIN), maxX), y: Math.min(Math.max(y, DRAG_MARGIN), maxY) }
+  }
+
+  const onPipPointerDown = (e) => {
+    const stage = stageRef.current
+    const pip = pipRef.current
+    if (!stage || !pip) return
+    e.currentTarget.setPointerCapture(e.pointerId)
+    const stageRect = stage.getBoundingClientRect()
+    const pipRect = pip.getBoundingClientRect()
+    pipDragRef.current = {
+      dragging: true,
+      pointerId: e.pointerId,
+      startClientX: e.clientX,
+      startClientY: e.clientY,
+      // Falls back to the tile's current on-screen position (converted into
+      // stage-relative coordinates) the first time it's ever dragged, since
+      // before that it's positioned by the top-4/right-4 CSS classes, not state.
+      startX: pipDragPos ? pipDragPos.x : pipRect.left - stageRect.left,
+      startY: pipDragPos ? pipDragPos.y : pipRect.top - stageRect.top,
+      moved: 0,
+    }
+  }
+
+  const onPipPointerMove = (e) => {
+    const d = pipDragRef.current
+    if (!d.dragging || e.pointerId !== d.pointerId) return
+    const dx = e.clientX - d.startClientX
+    const dy = e.clientY - d.startClientY
+    d.moved = Math.max(d.moved, Math.hypot(dx, dy))
+    setPipDragPos(clampPipPos(d.startX + dx, d.startY + dy))
+  }
+
+  const onPipPointerUp = (e) => {
+    const d = pipDragRef.current
+    if (!d.dragging || e.pointerId !== d.pointerId) return
+    pipDragRef.current = { ...d, dragging: false }
+    // Movement stayed under the threshold — this was a tap, not a drag, so
+    // it still gets the existing tap-to-swap behavior. Anything past it was
+    // a deliberate drag, which must NOT also trigger a swap.
+    if (d.moved < TAP_THRESHOLD_PX) setSwapped((s) => !s)
+  }
+
+  const acceptGiftRequest = async (g) => {
+    if (!g || giftRequest?.sending) return
+    setGiftRequest((cur) => (cur ? { ...cur, sending: true } : cur))
+    try {
+      await giftsApi.send(hostId, g.id, 'call', call?.callId)
+      await actions.refreshWallet()
+      toast(`Sent ${g.name}`)
+      setChatLog((l) => [...l, { text: `Sent a ${g.name}` }])
+      setGiftRequest(null)
+    } catch (err) {
+      toast(err instanceof ApiError ? err.message : 'Could not send gift', { tone: 'error' })
+      setGiftRequest((cur) => (cur ? { ...cur, sending: false } : cur))
+    }
+  }
+
+  const declineGiftRequest = () => {
+    setGiftRequest(null)
+    giftsApi.declineRequest(hostId).catch(() => {})
+  }
+
+  // Shown once when the call actually connects, not on every render/reconnect —
+  // a non-intrusive, honest notice (it doesn't claim capture is blocked, only
+  // that identity is embedded in the video, which the watermark above makes true).
+  const noticeShownRef = useRef(false)
+  useEffect(() => {
+    if (phase !== 'active' || noticeShownRef.current) return
+    noticeShownRef.current = true
+    toast('Screen capture and recording are prohibited. Your identity is embedded in this video.', { duration: 4500 })
+  }, [phase]) // eslint-disable-line
+
+  // Page Visibility API: real and universal, but it only ever tells you the
+  // tab was backgrounded — no mobile OS fires this for its screenshot or
+  // screen-recording gestures, so this is a privacy nicety (don't leave the
+  // video visible if someone glances at a backgrounded/minimized tab), not a
+  // capture detector. Audio/the call itself keeps running untouched; only the
+  // on-screen video is blurred and unblurred.
+  useEffect(() => {
+    const onVisibility = () => {
+      const hidden = document.visibilityState === 'hidden'
+      setPageHidden(hidden)
+      if (hidden) logSecurityEvent('PAGE_HIDDEN', { context: 'call', contextId: callRef.current?.callId })
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => document.removeEventListener('visibilitychange', onVisibility)
+  }, [])
+
+  // There is no browser API, on any platform, that tells a page someone else
+  // is recording its screen — getDisplayMedia only ever reports a stream this
+  // page itself requested (e.g. a "share my screen" feature), which this app
+  // doesn't have. So this is a feature-detection stub only: it records whether
+  // the API exists at all, ready to wire up the day a real self-initiated
+  // capture flow needs it, and never claims to detect a capture that has no
+  // technical signal to detect.
+  useEffect(() => {
+    if (phase === 'active' && isDisplayCaptureApiSupported()) {
+      logSecurityEvent('DISPLAY_CAPTURE_API_AVAILABLE', { context: 'call', contextId: call?.callId })
+    }
+  }, [phase]) // eslint-disable-line
 
   const remainingSec = useMemo(() => {
     if (!call?.ratePaise || !state.wallet) return Infinity
@@ -410,8 +554,8 @@ export default function CallRoom() {
       </div>
 
       {/* stage */}
-      <div className="relative flex flex-1 items-center justify-center">
-        {phase === 'active' && <Watermark user={state.user} />}
+      <div ref={stageRef} className="relative flex flex-1 items-center justify-center">
+        {phase === 'active' && <Watermark user={state.user} sessionId={call?.callId} secure layers={2} />}
         {mode === 'video' && phase === 'active' && (() => {
           // Whichever slot is the small PIP always gets z-10 — both boxes are
           // `position: absolute` siblings with no stacking context of their
@@ -419,11 +563,27 @@ export default function CallRoom() {
           // hide the other regardless of which one is visually meant to be on top.
           const fullClass = 'absolute inset-0'
           const pipClass = 'absolute right-4 top-4 z-10 h-36 w-28 overflow-hidden rounded-2xl'
+          // The PIP tile is freely draggable (WhatsApp-style) regardless of
+          // which video currently occupies it after a swap — these handlers
+          // and the drag-offset style apply to whichever box gets `pipClass`
+          // below, never to the full-screen one.
+          const pipDragStyle = {
+            touchAction: 'none',
+            ...(pipDragPos ? { left: pipDragPos.x, top: pipDragPos.y, right: 'auto', bottom: 'auto' } : {}),
+          }
+          const pipHandlers = {
+            ref: pipRef,
+            onPointerDown: onPipPointerDown,
+            onPointerMove: onPipPointerMove,
+            onPointerUp: onPipPointerUp,
+            onPointerCancel: onPipPointerUp,
+          }
           return (
             <>
               <div
-                onClick={() => setSwapped((s) => !s)}
+                {...(swapped ? pipHandlers : { onClick: () => setSwapped((s) => !s) })}
                 className={swapped ? pipClass : fullClass}
+                style={swapped ? pipDragStyle : undefined}
               >
                 <div ref={remoteVideoRef} className="absolute inset-0" />
                 {!remoteJoined && (
@@ -438,9 +598,12 @@ export default function CallRoom() {
               </div>
 
               <div
-                onClick={() => setSwapped((s) => !s)}
+                {...(swapped ? { onClick: () => setSwapped((s) => !s) } : pipHandlers)}
                 className={swapped ? fullClass : pipClass}
-                style={!swapped ? { background: 'radial-gradient(circle at 40% 35%,#7f9bd6,#4a6bb0)' } : undefined}
+                style={{
+                  ...(!swapped ? { background: 'radial-gradient(circle at 40% 35%,#7f9bd6,#4a6bb0)' } : {}),
+                  ...(!swapped ? pipDragStyle : {}),
+                }}
               >
                 <div ref={localVideoRef} className="absolute inset-0" />
                 {/* This is the one place that's always about *your own* outgoing
@@ -454,6 +617,8 @@ export default function CallRoom() {
                 {cameras.length > 1 && (
                   <button
                     onClick={(e) => { e.stopPropagation(); flipCamera() }}
+                    onPointerDown={(e) => e.stopPropagation()}
+                    onPointerUp={(e) => e.stopPropagation()}
                     disabled={flipping}
                     className={
                       swapped
@@ -468,6 +633,50 @@ export default function CallRoom() {
             </>
           )
         })()}
+
+        {giftRequest && phase === 'active' && (
+          <div className="absolute inset-x-4 top-3 z-[63] rounded-2xl bg-black/60 p-3 backdrop-blur">
+            <div className="flex items-center gap-2.5">
+              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-gold/20 text-gold"><HeartHandshake size={18} /></span>
+              <div className="min-w-0 flex-1">
+                <p className="text-[13px] font-semibold text-white">
+                  {c?.name || 'Host'} is requesting a gift
+                </p>
+                <p className="truncate text-[12px] text-white/60">
+                  {giftRequest.gift
+                    ? `${giftRequest.gift.name} · ₹${Math.round(giftRequest.gift.pricePaise / 100)}`
+                    : 'Choose a gift to send'}
+                </p>
+              </div>
+            </div>
+            <div className="mt-2.5 flex gap-2">
+              <button
+                onClick={() => {
+                  if (giftRequest.gift) { acceptGiftRequest(giftRequest.gift); return }
+                  setGift(true)
+                  setGiftRequest(null)
+                }}
+                disabled={giftRequest.sending}
+                className="flex-1 rounded-xl bg-gold py-2 text-[13px] font-bold text-ink disabled:opacity-60"
+              >
+                {giftRequest.sending ? 'Sending…' : giftRequest.gift ? 'Yes, send' : 'Choose gift'}
+              </button>
+              <button
+                onClick={declineGiftRequest}
+                disabled={giftRequest.sending}
+                className="flex-1 rounded-xl bg-white/10 py-2 text-[13px] font-semibold text-white disabled:opacity-60"
+              >
+                Not now
+              </button>
+            </div>
+          </div>
+        )}
+
+        {pageHidden && phase === 'active' && (
+          <div className="absolute inset-0 z-[65] flex items-center justify-center bg-black/90 backdrop-blur-2xl">
+            <p className="px-8 text-center text-[13px] text-white/60">Video paused while this tab isn't in view</p>
+          </div>
+        )}
 
         {phase === 'connecting' && (
           <div className="flex flex-col items-center">
