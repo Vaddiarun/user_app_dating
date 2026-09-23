@@ -1,14 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
-  Mic, MicOff, MessageSquare, Gift, PhoneOff, X, AlertTriangle, Wallet, RotateCw, SwitchCamera, HeartHandshake,
+  Mic, MicOff, MessageSquare, Gift, PhoneOff, X, AlertTriangle, Wallet, RotateCw, SwitchCamera, HeartHandshake, Send,
 } from 'lucide-react'
 import { useApp } from '../store/AppStore'
 import { Avatar, Button } from '../components/ui'
 import { clock } from '../lib/format'
 import GiftPicker from '../components/GiftPicker'
 import Watermark from '../components/Watermark'
-import { callsApi, hostsApi, giftsApi, ApiError } from '../lib/api'
+import { callsApi, hostsApi, giftsApi, chatApi, ApiError } from '../lib/api'
 import { normalizeHost, normalizeGift } from '../lib/normalize'
 import { joinAndPublish, leaveChannel, PLAY_CONFIG, listCameras, switchCameraFacing } from '../lib/agora'
 import { getSocket, onSocketEvent } from '../lib/socket'
@@ -38,6 +38,9 @@ export default function CallRoom() {
   const [showChat, setShowChat] = useState(false)
   const [gift, setGift] = useState(false)
   const [chatLog, setChatLog] = useState([])
+  const [chatText, setChatText] = useState('')
+  const [chatSending, setChatSending] = useState(false)
+  const [chatErr, setChatErr] = useState('')
   const [rtcErr, setRtcErr] = useState('') // fatal — mic/join never came up, call has no audio at all
   const [camErr, setCamErr] = useState('') // non-fatal — camera specifically failed, audio still works
   const [remoteJoined, setRemoteJoined] = useState(false)
@@ -219,6 +222,12 @@ export default function CallRoom() {
             setGiftRequest((cur) => (cur ? { ...cur, gift: match } : cur))
           })
           .catch(() => {})
+      }))
+      // In-call chat toggle — scoped to "this call's host" the same way gift:requested is
+      // above, since chat:message only carries senderId, no callId.
+      unsubs.push(onSocketEvent('chat:message', (m) => {
+        if (m?.senderId !== hostId) return
+        setChatLog((l) => [...l, { id: m.messageId, senderId: m.senderId, content: m.content }])
       }))
     }
     attach()
@@ -443,6 +452,23 @@ export default function CallRoom() {
   const declineGiftRequest = () => {
     setGiftRequest(null)
     giftsApi.declineRequest(hostId).catch(() => {})
+  }
+
+  const sendChatMessage = async () => {
+    const content = chatText.trim()
+    if (!content || chatSending) return
+    setChatSending(true)
+    setChatErr('')
+    setChatText('')
+    try {
+      const res = await chatApi.send(hostId, content)
+      setChatLog((l) => [...l, { id: res.messageId, senderId: res.senderId, content: res.content }])
+    } catch (err) {
+      setChatText(content)
+      setChatErr(err instanceof ApiError ? err.message : 'Could not send that message.')
+    } finally {
+      setChatSending(false)
+    }
   }
 
   // Shown once when the call actually connects, not on every render/reconnect —
@@ -714,14 +740,29 @@ export default function CallRoom() {
         )}
 
         {showChat && phase === 'active' && (
-          <div className="absolute bottom-4 left-4 w-72 rounded-2xl bg-black/45 p-3 backdrop-blur">
-            <div className="thin-scroll max-h-40 space-y-1.5 overflow-y-auto text-[13px]">
-              {chatLog.length === 0 && <p className="text-white/50">Sent gifts and notes show up here.</p>}
+          <div className="absolute bottom-4 left-4 right-4 sm:right-auto sm:w-80 rounded-2xl bg-black/45 backdrop-blur flex flex-col">
+            <div className="thin-scroll max-h-40 space-y-1.5 overflow-y-auto p-3 text-[13px]">
+              {chatLog.length === 0 && <p className="text-white/50">Messages during this call show up here.</p>}
               {chatLog.map((m, i) => (
-                <p key={i} className="text-right text-white">
-                  <span className="inline-block rounded-xl bg-brand px-2.5 py-1">{m.text}</span>
+                <p key={m.id ?? i} className={m.senderId && m.senderId === hostId ? 'text-left' : 'text-right'}>
+                  <span className={`inline-block rounded-xl px-2.5 py-1 text-white ${m.senderId && m.senderId === hostId ? 'bg-white/15' : 'bg-brand'}`}>
+                    {m.content ?? m.text}
+                  </span>
                 </p>
               ))}
+            </div>
+            {chatErr && <p className="px-3 pb-1 text-[11px] text-rose-300">{chatErr}</p>}
+            <div className="flex items-center gap-2 p-2.5 pt-0">
+              <input
+                value={chatText}
+                onChange={(e) => setChatText(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && sendChatMessage()}
+                placeholder="Message…"
+                className="flex-1 rounded-full bg-white/10 text-white placeholder-white/40 px-3.5 py-2 text-[13px] outline-none"
+              />
+              <button onClick={sendChatMessage} disabled={chatSending || !chatText.trim()} className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-brand text-ink disabled:opacity-50">
+                <Send size={16} />
+              </button>
             </div>
           </div>
         )}
