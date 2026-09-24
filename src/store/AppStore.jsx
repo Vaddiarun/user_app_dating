@@ -19,7 +19,7 @@ function loadNotifications() {
 const initialState = {
   authStatus: isAuthenticated() ? 'checking' : 'guest', // checking | guest | authenticated
   user: null,
-  wallet: null, // { balancePaise, displayBeans }
+  wallet: null, // { balancePaise } — shown as ₹ via rupees()
   notifPrefs: null,
   blocked: [], // [{ id, name, ts }]
   following: [], // [hostId]

@@ -16,7 +16,12 @@ export function normalizeHost(h) {
     // further frontend change needed.
     avatarUrl: h.avatarUrl || h.photoUrl || null,
     bio: h.bio || '',
+    // All three are what this user will actually be charged — set by the host's level
+    // on the backend (the host's own rate, capped at their level maximum).
     ratePaise: h.ratePerMinutePaise ?? 0,
+    voiceRatePaise: h.voiceRatePerMinutePaise ?? 0,
+    messageRatePaise: h.messageRatePaise ?? 0,
+    level: h.level ?? 1,
     rating: h.rating?.average ?? 0,
     ratingCount: h.rating?.count ?? 0,
     followerCount: h.followerCount ?? 0,
@@ -46,8 +51,7 @@ export function normalizeHostList(res) {
 
 export function normalizeGift(g) {
   if (!g) return g
-  // Gifts are priced in real paise (pricePaise), NOT the wallet's cosmetic
-  // "beans" label — displayBeans only ever appears on wallet/recharge/call-spend
-  // responses, never on the gift catalog itself.
+  // Gifts are priced in real paise (pricePaise), like every amount the user
+  // sees — beans are host-only.
   return { id: g.id, name: g.name, iconUrl: g.iconUrl || null, pricePaise: g.pricePaise ?? 0 }
 }

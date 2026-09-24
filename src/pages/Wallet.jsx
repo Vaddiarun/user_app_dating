@@ -5,7 +5,7 @@ import {
 } from 'lucide-react'
 import { useApp } from '../store/AppStore'
 import { Button, Card, EmptyState } from '../components/ui'
-import { beans } from '../lib/format'
+import { rupees } from '../lib/format'
 import { walletApi, ApiError } from '../lib/api'
 
 export default function Wallet() {
@@ -25,10 +25,7 @@ export default function Wallet() {
         <p className="text-[13px] font-semibold text-subtle">Available balance</p>
         {state.wallet ? (
           <>
-            <p className="mt-1 text-[32px] font-extrabold text-gold">
-              {beans(state.wallet.displayBeans)} <span className="text-[15px] font-semibold text-subtle">beans</span>
-            </p>
-            <p className="text-[12px] text-subtle">₹{((state.wallet.balancePaise || 0) / 100).toFixed(2)} wallet balance</p>
+            <p className="mt-1 text-[32px] font-extrabold text-gold">₹{rupees(state.wallet.balancePaise)}</p>
           </>
         ) : (
           <Loader2 size={22} className="mt-2 animate-spin text-subtle" />
@@ -38,8 +35,8 @@ export default function Wallet() {
           <div className="mt-4 grid grid-cols-3 gap-2.5">
             {packages.slice(0, 3).map((p) => (
               <button key={p.id} onClick={() => nav(`/add-balance?pkg=${p.id}`)} className="rounded-xl border border-line py-3 text-center hover:border-brand-200">
-                <p className="text-[14px] font-bold text-ink">₹{(p.pricePaise ?? p.price ?? 0) / 100 || p.amount}</p>
-                <p className="text-[11px] text-subtle">{beans(p.beans ?? p.displayBeans ?? 0)} beans</p>
+                <p className="text-[14px] font-bold text-ink">₹{rupees(p.pricePaise)}</p>
+                {p.mrpPaise > p.pricePaise && <p className="text-[11px] text-subtle line-through">₹{rupees(p.mrpPaise)}</p>}
               </button>
             ))}
           </div>
@@ -56,8 +53,8 @@ export default function Wallet() {
               <button key={p.id} onClick={() => nav(`/add-balance?pkg=${p.id}`)} className="flex w-full items-center gap-3 px-4 py-3.5 text-left hover:bg-gray-50 dark:hover:bg-white/5">
                 <span className="grid h-10 w-10 place-items-center rounded-xl bg-brand-50 text-brand dark:bg-brand/15"><CreditCard size={17} /></span>
                 <div className="flex-1">
-                  <p className="text-[14px] font-semibold text-ink">₹{((p.pricePaise ?? p.price ?? 0) / 100) || p.amount}</p>
-                  <p className="text-[12px] text-subtle">{beans(p.beans ?? p.displayBeans ?? 0)} beans</p>
+                  <p className="text-[14px] font-semibold text-ink">₹{rupees(p.pricePaise)}</p>
+                  {p.mrpPaise > p.pricePaise && <p className="text-[12px] text-subtle line-through">₹{rupees(p.mrpPaise)}</p>}
                 </div>
               </button>
             ))}
@@ -136,7 +133,7 @@ export function AddBalance() {
         <h1 className="mt-4 text-[20px] font-bold text-ink">Balance added</h1>
         <Card className="mt-5 w-full p-4 text-center">
           <p className="text-[13px] text-subtle">New balance</p>
-          <p className="mt-1 text-[24px] font-extrabold text-gold">{beans(state.wallet?.displayBeans ?? 0)} <span className="text-[14px] font-semibold text-subtle">beans</span></p>
+          <p className="mt-1 text-[24px] font-extrabold text-gold">₹{rupees(state.wallet?.balancePaise)}</p>
         </Card>
         <Button className="mt-4 w-full py-3" onClick={() => nav('/wallet')}>Back to wallet</Button>
       </Centered>
@@ -168,8 +165,8 @@ export function AddBalance() {
             onClick={() => setPack(p)}
             className={`rounded-2xl border p-4 text-left ${pack?.id === p.id ? 'border-2 border-brand bg-brand-50 dark:bg-brand/15' : 'border-line'}`}
           >
-            <p className="text-[16px] font-bold text-ink">₹{((p.pricePaise ?? p.price ?? 0) / 100) || p.amount}</p>
-            <p className="text-[13px] font-medium text-gold">{beans(p.beans ?? p.displayBeans ?? 0)} beans</p>
+            <p className="text-[16px] font-bold text-ink">₹{rupees(p.pricePaise)}</p>
+            {p.mrpPaise > p.pricePaise && <p className="text-[13px] font-medium text-subtle line-through">₹{rupees(p.mrpPaise)}</p>}
           </button>
         ))}
       </div>

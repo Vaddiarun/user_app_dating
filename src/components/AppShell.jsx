@@ -5,7 +5,7 @@ import {
 } from 'lucide-react'
 import { useApp } from '../store/AppStore'
 import { Avatar } from './ui'
-import { beans, userName, userHandle } from '../lib/format'
+import { rupees, userName, userHandle } from '../lib/format'
 import { chatApi } from '../lib/api'
 
 const NAV = [
@@ -129,7 +129,7 @@ export default function AppShell({ children }) {
             onClick={() => nav('/wallet')}
             className="flex items-center gap-1.5 rounded-xl border border-line px-2.5 py-2 text-[13px] font-bold text-gold hover:bg-gray-50 dark:hover:bg-white/5"
           >
-            <Wallet size={15} /> {state.wallet ? beans(state.wallet.displayBeans) : '—'}
+            <Wallet size={15} /> {state.wallet ? `₹${rupees(state.wallet.balancePaise)}` : '—'}
           </button>
           <button
             onClick={() => nav('/notifications')}

@@ -5,7 +5,7 @@ import {
 } from 'lucide-react'
 import { useApp } from '../store/AppStore'
 import { Avatar, Button, EmptyState, Modal } from '../components/ui'
-import { relTime, timeOfDay } from '../lib/format'
+import { relTime, rupees, timeOfDay } from '../lib/format'
 import GiftPicker from '../components/GiftPicker'
 import { CallModal } from './Home'
 import { chatApi, hostsApi, giftsApi, ApiError } from '../lib/api'
@@ -185,8 +185,15 @@ function Conversation({ hostId, conversationId: initialConvId }) {
       if (!conversationId && cid) setConversationId(cid)
       setMessages((m) => [...m, { id: `local-${Date.now()}`, mine: true, text: t, ts: Date.now() }])
       loadMessages(cid)
+      actions.refreshWallet().catch(() => {}) // each message to a creator is paid
     } catch (err) {
-      toast(err instanceof ApiError ? err.message : 'Could not send message', { tone: 'error' })
+      // 402 = balance can't cover this creator's message price; the message wasn't sent.
+      if (err instanceof ApiError && err.status === 402) {
+        setText(t)
+        toast(`Not enough balance — messages to ${c?.name || 'this creator'} cost ₹${rupees(c?.messageRatePaise)}`, { tone: 'error' })
+      } else {
+        toast(err instanceof ApiError ? err.message : 'Could not send message', { tone: 'error' })
+      }
     } finally {
       setSending(false)
     }
@@ -243,7 +250,7 @@ function Conversation({ hostId, conversationId: initialConvId }) {
             value={text}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && send()}
-            placeholder={`Message ${c?.name || ''}`}
+            placeholder={c?.messageRatePaise ? `Message ${c.name} · ₹${rupees(c.messageRatePaise)} per message` : `Message ${c?.name || ''}`}
             className="flex-1 rounded-full border border-line bg-canvas px-4 py-2.5 text-[14px] outline-none focus:border-brand-200"
           />
           <button onClick={send} className="grid h-10 w-10 place-items-center rounded-full bg-brand text-white disabled:opacity-40" disabled={!text.trim() || sending}>

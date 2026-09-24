@@ -1,9 +1,5 @@
 export const nf = new Intl.NumberFormat('en-IN')
 
-export function beans(n) {
-  return nf.format(Math.round(n))
-}
-
 export function clock(totalSeconds) {
   const s = Math.max(0, Math.floor(totalSeconds))
   const m = Math.floor(s / 60)
@@ -28,8 +24,13 @@ export function timeOfDay(ts) {
   return new Date(ts).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' })
 }
 
+const nf2 = new Intl.NumberFormat('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+
+// Every amount the user sees is real currency (beans are host-only). Never
+// rounded — 1250 paise shows 12.50, not 13; whole rupees drop the ".00".
 export function rupees(paise) {
-  return nf.format(Math.round((paise || 0) / 100))
+  const p = Math.round(paise || 0)
+  return p % 100 === 0 ? nf.format(p / 100) : nf2.format(p / 100)
 }
 
 export function compact(n) {
