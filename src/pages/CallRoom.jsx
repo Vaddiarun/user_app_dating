@@ -126,14 +126,14 @@ export default function CallRoom() {
     setPhase('active')
   }
 
-  const handleServerEnd = (status, totalBeans) => {
+  const handleServerEnd = (status, totalAmountPaise) => {
     if (endedRef.current) return
     endedRef.current = true
     if (sessionRef.current) { leaveChannel(sessionRef.current); sessionRef.current = null }
     const st = (status || '').toLowerCase()
-    const b = totalBeans ?? ''
+    const amt = totalAmountPaise ?? ''
     const cid = callRef.current?.callId
-    const q = `?d=${secondsRef.current}${b !== '' ? `&b=${b}` : ''}${cid ? `&cid=${cid}` : ''}`
+    const q = `?d=${secondsRef.current}${amt !== '' ? `&amt=${amt}` : ''}${cid ? `&cid=${cid}` : ''}`
     // missed/rejected/failed means the call never really connected — same
     // "didn't go through" outcome screen as a ringing timeout; only a call
     // that actually ran (completed) gets the rate-this-call summary. `st` is
@@ -162,10 +162,11 @@ export default function CallRoom() {
     try {
       const res = await callsApi.end(cid)
       actions.refreshWallet().catch(() => {})
-      // The end-call response carries totalBeans/totalAmountPaise but no duration
-      // field — the client's own elapsed timer is the only source for that.
-      const b = res.totalBeans ?? ''
-      const q = `?d=${secondsRef.current}${b !== '' ? `&b=${b}` : ''}&cid=${cid}`
+      // The end-call response carries totalAmountPaise but no duration field —
+      // the client's own elapsed timer is the only source for that. The user is
+      // shown what they paid (₹), never totalBeans (the host's post-commission earnings).
+      const amt = res.totalAmountPaise ?? ''
+      const q = `?d=${secondsRef.current}${amt !== '' ? `&amt=${amt}` : ''}&cid=${cid}`
       // A call cancelled/timed out while still ringing never connected — same
       // "didn't go through" screen regardless of why, not the rate-this-call
       // summary (that's only for a call that actually ran).
@@ -205,7 +206,7 @@ export default function CallRoom() {
       }))
       unsubs.push(onSocketEvent('call:ended', (payload) => {
         if (payload?.callId !== call.callId) return
-        handleServerEnd(payload?.status, payload?.totalBeans)
+        handleServerEnd(payload?.status, payload?.totalAmountPaise)
       }))
       // The host asking for a gift mid-call — the event only carries hostId
       // (no callId), so it's scoped to "this call's host" instead; a user is
@@ -249,7 +250,7 @@ export default function CallRoom() {
         const [status, wallet] = await Promise.all([callsApi.get(call.callId), actions.refreshWallet()])
         const st = (status.status || '').toLowerCase()
         if (TERMINAL_CALL_STATUSES.includes(st)) {
-          handleServerEnd(status.status, status.totalBeans)
+          handleServerEnd(status.status, status.totalAmountPaise)
         } else if (st === 'ongoing') {
           markAccepted()
         }

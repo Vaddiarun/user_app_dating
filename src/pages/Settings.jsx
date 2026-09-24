@@ -6,7 +6,7 @@ import {
 } from 'lucide-react'
 import { useApp } from '../store/AppStore'
 import { Avatar, Button, Card, Toggle, EmptyState } from '../components/ui'
-import { beans, userName, userHandle } from '../lib/format'
+import { rupees, userName, userHandle } from '../lib/format'
 import {
   meApi, vipApi, walletApi, grievanceApi, uploadToS3, ApiError,
 } from '../lib/api'
@@ -163,7 +163,7 @@ export function Talktime() {
     <Sub title="Talktime">
       <div>
         <p className="text-[13px] text-subtle">Available Talktime</p>
-        <p className="text-[26px] font-extrabold text-gold">{state.wallet ? beans(state.wallet.displayBeans) : '—'}</p>
+        <p className="text-[26px] font-extrabold text-gold">{state.wallet ? `₹${rupees(state.wallet.balancePaise)}` : '—'}</p>
       </div>
 
       {!state.user?.isVipActive && (
@@ -182,8 +182,9 @@ export function Talktime() {
       <div className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-3">
         {packages.map((p) => (
           <button key={p.id} onClick={() => nav(`/add-balance?pkg=${p.id}`)} className="rounded-xl border border-line p-3 text-center hover:border-brand-200">
-            <p className="text-[14px] font-bold text-ink">{beans(p.beans ?? p.displayBeans ?? 0)}</p>
-            <p className="mt-1 rounded-md bg-brand py-1 text-[12px] font-bold text-white">Pay ₹{((p.pricePaise ?? p.price ?? 0) / 100) || p.amount}</p>
+            <p className="text-[14px] font-bold text-ink">₹{rupees(p.pricePaise)}</p>
+            {p.mrpPaise > p.pricePaise && <p className="text-[11px] text-subtle line-through">₹{rupees(p.mrpPaise)}</p>}
+            <p className="mt-1 rounded-md bg-brand py-1 text-[12px] font-bold text-white">Recharge</p>
           </button>
         ))}
       </div>

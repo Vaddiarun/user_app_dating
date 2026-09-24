@@ -5,7 +5,7 @@ import {
 } from 'lucide-react'
 import { useApp } from '../store/AppStore'
 import { Avatar, Button, Card } from '../components/ui'
-import { beans, clock } from '../lib/format'
+import { rupees, clock } from '../lib/format'
 import { hostsApi, moderationApi, callsApi, ApiError } from '../lib/api'
 import { normalizeHost } from '../lib/normalize'
 
@@ -91,7 +91,7 @@ export function CallEnded() {
       <p className="mt-2 text-[13px] leading-relaxed text-subtle">{reason.message(name)}</p>
       <Card className="mt-5 w-full p-4">
         <Row k="Duration" v={clock(+sp.get('d') || 0)} />
-        <Row k="Beans used" v={<span className="text-gold">{beans(+sp.get('b') || 0)}</span>} />
+        <Row k="Amount spent" v={<span className="text-gold">₹{rupees(+sp.get('amt') || 0)}</span>} />
       </Card>
       {reason === END_REASONS.balance ? (
         <Button variant="gold" className="mt-4 w-full py-3" onClick={() => nav('/add-balance')}><Plus size={16} /> Add balance</Button>
@@ -128,7 +128,7 @@ export function CallSummary() {
       <h1 className="mt-3 text-[19px] font-bold text-ink">{c?.name || '…'}</h1>
       <Card className="mt-4 grid w-full grid-cols-2 gap-4 p-4 text-left">
         <div><p className="text-[12px] text-subtle">Duration</p><p className="text-[18px] font-bold text-ink">{clock(+sp.get('d') || 0)}</p></div>
-        <div><p className="text-[12px] text-subtle">Beans used</p><p className="text-[18px] font-bold text-gold">{beans(+sp.get('b') || 0)}</p></div>
+        <div><p className="text-[12px] text-subtle">Amount spent</p><p className="text-[18px] font-bold text-gold">₹{rupees(+sp.get('amt') || 0)}</p></div>
       </Card>
       {callId && (
         <Card className="mt-3 w-full p-4">

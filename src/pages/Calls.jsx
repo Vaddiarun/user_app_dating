@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Phone, PhoneOff, Video, Loader2, RotateCw } from 'lucide-react'
 import { EmptyState, Button, Card, Avatar } from '../components/ui'
-import { clock, beans, relTime, timeOfDay } from '../lib/format'
+import { clock, rupees, relTime, timeOfDay } from '../lib/format'
 import { meApi, ApiError } from '../lib/api'
 
 function normalizeCall(c) {
@@ -12,7 +12,7 @@ function normalizeCall(c) {
     hostName: c.host?.name || c.hostName || 'Creator',
     ts: c.createdAt ? new Date(c.createdAt).getTime() : Date.now(),
     duration: c.durationSeconds ?? c.duration ?? 0,
-    beans: c.spentBeans ?? c.beans ?? 0,
+    amountPaise: c.totalAmountPaise ?? 0,
     status: c.status || 'Completed',
   }
 }
@@ -75,7 +75,7 @@ export default function Calls() {
                 </p>
               </div>
               <div className="text-right">
-                <p className={`text-[13px] font-semibold ${missed ? 'text-subtle' : 'text-gold'}`}>{missed ? '—' : `${beans(call.beans)} beans`}</p>
+                <p className={`text-[13px] font-semibold ${missed ? 'text-subtle' : 'text-gold'}`}>{missed ? '—' : `₹${rupees(call.amountPaise)}`}</p>
                 <p className={`text-[12px] ${missed ? 'text-rose-500' : 'text-subtle'}`}>{call.status}</p>
               </div>
             </button>

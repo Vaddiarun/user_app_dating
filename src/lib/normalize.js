@@ -40,8 +40,7 @@ export function normalizeHostList(res) {
 
 export function normalizeGift(g) {
   if (!g) return g
-  // Gifts are priced in real paise (pricePaise), NOT the wallet's cosmetic
-  // "beans" label — displayBeans only ever appears on wallet/recharge/call-spend
-  // responses, never on the gift catalog itself.
+  // Gifts are priced in real paise (pricePaise), like every amount the user
+  // sees — beans are host-only.
   return { id: g.id, name: g.name, iconUrl: g.iconUrl || null, pricePaise: g.pricePaise ?? 0 }
 }
