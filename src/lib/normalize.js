@@ -10,7 +10,12 @@ export function normalizeHost(h) {
     id: h.id || h.hostId,
     name: h.name || 'Host',
     bio: h.bio || '',
+    // All three are what this user will actually be charged — set by the host's level
+    // on the backend (the host's own rate, capped at their level maximum).
     ratePaise: h.ratePerMinutePaise ?? 0,
+    voiceRatePaise: h.voiceRatePerMinutePaise ?? 0,
+    messageRatePaise: h.messageRatePaise ?? 0,
+    level: h.level ?? 1,
     rating: h.rating?.average ?? 0,
     ratingCount: h.rating?.count ?? 0,
     followerCount: h.followerCount ?? 0,
