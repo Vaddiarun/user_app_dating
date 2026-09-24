@@ -6,37 +6,13 @@ import { Avatar, GradientBox, Chip, EmptyState, Button, Modal, Skeleton } from '
 import { hostsApi, meApi, ApiError } from '../lib/api'
 import { normalizeHostList } from '../lib/normalize'
 import { userName } from '../lib/format'
+import { useHostGallery } from '../lib/hostGallery'
 
 const TABS = ['All', 'New', 'Popular', 'Following']
 const CARD_G = [
   ['#8f7fe0', '#5b28d6'], ['#a99be8', '#6a4fd0'], ['#e6b980', '#c9822b'],
   ['#7fd6a8', '#3f9878'], ['#d68f9b', '#9b3f5f'], ['#8fb0e8', '#4a6bb0'],
 ]
-
-// Small in-memory cache so switching tabs doesn't re-fetch the same host's
-// gallery every time the grid remounts.
-const galleryCache = new Map()
-function useHostGallery(hostId) {
-  const [photos, setPhotos] = useState(() => galleryCache.get(hostId) ?? null)
-  useEffect(() => {
-    if (galleryCache.has(hostId)) {
-      setPhotos(galleryCache.get(hostId))
-      return
-    }
-    let alive = true
-    hostsApi.gallery(hostId)
-      .then((res) => {
-        const items = (res.items || []).filter((it) => it.mediaType === 'photo' && it.url)
-        galleryCache.set(hostId, items)
-        if (alive) setPhotos(items)
-      })
-      .catch(() => {
-        if (alive) setPhotos([])
-      })
-    return () => { alive = false }
-  }, [hostId])
-  return photos
-}
 
 async function fetchTab(tab) {
   if (tab === 'Following') {
@@ -164,6 +140,8 @@ function CardMedia({ c, from, to, seed }) {
   }
 
   const hasPhotos = photos && photos.length > 0
+  // The first gallery photo doubles as the profile pic wherever avatarUrl isn't set.
+  const avatarUrl = c.avatarUrl || photos?.[0]?.url || null
 
   // Auto-advance the carousel every 3s; the timer restarts on every index
   // change (auto or manual swipe), so a manual swipe just resets the clock
@@ -200,7 +178,7 @@ function CardMedia({ c, from, to, seed }) {
       ) : (
         <GradientBox from={from} to={to} seed={seed} className="h-full w-full">
           <div className="absolute inset-0 grid place-items-center">
-            <Avatar id={c.id} photoUrl={c.avatarUrl} size={56} />
+            <Avatar id={c.id} photoUrl={avatarUrl} size={56} />
           </div>
         </GradientBox>
       )}
@@ -225,7 +203,7 @@ function CardMedia({ c, from, to, seed }) {
 
       <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 to-transparent p-3">
         <div className="flex items-center gap-1.5">
-          <Avatar id={c.id} photoUrl={c.avatarUrl} size={20} />
+          <Avatar id={c.id} photoUrl={avatarUrl} size={20} />
           <span className="truncate text-[14px] font-semibold text-white">{c.name}</span>
         </div>
         <div className="mt-1 flex items-center gap-2.5 text-[11px] text-white/90">

@@ -73,6 +73,9 @@ export default function Creator() {
     )
   }
 
+  // The first gallery photo doubles as the profile pic wherever avatarUrl isn't set.
+  const avatarUrl = c.avatarUrl || galleryItems.find((it) => it.type === 'photo')?.url || null
+
   const following = state.following.includes(c.id) || c.isFollowing
 
   const toggleFollow = async () => {
@@ -106,7 +109,7 @@ export default function Creator() {
         <div className="lg:sticky lg:top-20 lg:self-start">
           <Card className="p-5">
             <div className="flex items-start gap-4">
-              <Avatar id={c.id} photoUrl={c.avatarUrl} size={72} ring ringColor={c.online ? '#2fb37a' : '#c9c9d2'} />
+              <Avatar id={c.id} photoUrl={avatarUrl} size={72} ring ringColor={c.online ? '#2fb37a' : '#c9c9d2'} />
               <div className="min-w-0 pt-1">
                 <div className="flex items-center gap-1.5">
                   <span className="text-[19px] font-bold text-ink">{c.name}</span>

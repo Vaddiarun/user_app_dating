@@ -10,6 +10,7 @@ import GiftPicker from '../components/GiftPicker'
 import { CallModal } from './Home'
 import { chatApi, hostsApi, giftsApi, ApiError } from '../lib/api'
 import { normalizeHost } from '../lib/normalize'
+import { useHostAvatarUrl } from '../lib/hostGallery'
 
 // Verified against the live backend: GET /chat/conversations returns
 // { conversations: [{ id, userId, hostId, lastMessageAt, createdAt, otherParticipant: { id, name, phone, role } }] }
@@ -92,7 +93,7 @@ export default function Chat() {
                   id === cv.hostId ? 'bg-brand-50 dark:bg-brand/15' : 'hover:bg-gray-50 dark:hover:bg-white/5'
                 }`}
               >
-                <Avatar id={cv.hostId} size={42} />
+                <ConversationAvatar hostId={cv.hostId} size={42} />
                 <div className="min-w-0 flex-1">
                   <p className="text-[14px] font-semibold text-ink">{cv.hostName}</p>
                 </div>
@@ -128,6 +129,8 @@ function Conversation({ hostId, conversationId: initialConvId }) {
   const scrollRef = useRef(null)
 
   const blocked = state.blocked.some((b) => b.id === hostId)
+  // The first gallery photo doubles as the profile pic wherever avatarUrl isn't set.
+  const avatarUrl = useHostAvatarUrl(c)
 
   useEffect(() => {
     let alive = true
@@ -202,7 +205,7 @@ function Conversation({ hostId, conversationId: initialConvId }) {
       <div className="flex items-center gap-3 border-b border-line px-4 py-3">
         <button className="md:hidden" onClick={() => nav('/chat')}><ArrowLeft size={20} /></button>
         <button onClick={() => nav(`/creator/${hostId}`)} className="flex items-center gap-2.5">
-          <Avatar id={hostId} size={38} ring ringColor="#e0a0a0" />
+          <Avatar id={hostId} photoUrl={avatarUrl} size={38} ring ringColor="#e0a0a0" />
           <div className="text-left">
             <p className="text-[15px] font-semibold text-ink">{c?.name || '…'}</p>
             <p className={`text-[12px] font-medium ${c?.online ? 'text-green-600' : 'text-subtle'}`}>{c?.online ? 'Online now' : 'Offline'}</p>
@@ -268,6 +271,11 @@ function Conversation({ hostId, conversationId: initialConvId }) {
       )}
     </div>
   )
+}
+
+function ConversationAvatar({ hostId, size }) {
+  const avatarUrl = useHostAvatarUrl({ id: hostId, avatarUrl: null })
+  return <Avatar id={hostId} photoUrl={avatarUrl} size={size} />
 }
 
 function MessageBubble({ m }) {
