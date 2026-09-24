@@ -68,7 +68,7 @@ export default function AppShell({ children }) {
             className="flex w-full items-center gap-3 rounded-xl p-2 text-left hover:bg-gray-100 dark:hover:bg-white/5 transition group"
             title="Go to Profile"
           >
-            <Avatar id={state.user?.id || 'me'} size={38} ring ringColor="#5b28d6" />
+            <Avatar id={state.user?.id || 'me'} photoUrl={state.user?.avatarUrl} size={38} ring ringColor="#5b28d6" />
             <div className="min-w-0 flex-1">
               <p className="truncate text-[13px] font-bold text-ink group-hover:text-brand">{userName(state.user)}</p>
               <p className="truncate text-[11px] text-subtle">{userHandle(state.user) || 'View profile'}</p>
@@ -99,7 +99,7 @@ export default function AppShell({ children }) {
                 onClick={() => { setOpen(false); nav('/profile') }}
                 className="flex w-full items-center gap-3 rounded-xl p-2 text-left hover:bg-gray-100 dark:hover:bg-white/5 transition group"
               >
-                <Avatar id={state.user?.id || 'me'} size={38} ring ringColor="#5b28d6" />
+                <Avatar id={state.user?.id || 'me'} photoUrl={state.user?.avatarUrl} size={38} ring ringColor="#5b28d6" />
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-[13px] font-bold text-ink group-hover:text-brand">{userName(state.user)}</p>
                   <p className="truncate text-[11px] text-subtle">{userHandle(state.user) || 'View profile'}</p>
@@ -147,7 +147,7 @@ export default function AppShell({ children }) {
             className="flex items-center gap-2 rounded-xl border border-line bg-canvas/60 px-2 py-1.5 hover:border-brand-200 hover:bg-gray-50 dark:hover:bg-white/5 transition group"
             title="View profile"
           >
-            <Avatar id={state.user?.id || 'me'} size={32} ring ringColor="#5b28d6" />
+            <Avatar id={state.user?.id || 'me'} photoUrl={state.user?.avatarUrl} size={32} ring ringColor="#5b28d6" />
             <div className="hidden sm:flex flex-col text-left pr-1">
               <span className="text-[13px] font-bold text-ink leading-tight truncate max-w-[120px] group-hover:text-brand">
                 {userName(state.user)}

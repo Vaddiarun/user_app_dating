@@ -1,20 +1,39 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { X } from 'lucide-react'
 import { gradientFor } from '../store/seed'
 
 /* ---------------- Avatar ---------------- */
-export function Avatar({ id = 'me', size = 40, ring, ringColor = '#e79b9b', live, className = '' }) {
+// `photoUrl`, when given, renders the real uploaded photo instead of the
+// generated color-gradient placeholder. Falls back to the gradient if the
+// photo fails to load (a broken/expired URL, or a storage permission issue —
+// e.g. an upload succeeding but the file coming back non-public — should
+// never show a broken-image icon, only the same placeholder as no photo at all).
+export function Avatar({ id = 'me', size = 40, ring, ringColor = '#e79b9b', live, photoUrl, className = '' }) {
   const [a, b] = gradientFor(id)
+  const [failed, setFailed] = useState(false)
+  useEffect(() => setFailed(false), [photoUrl])
+  const showPhoto = photoUrl && !failed
+
   return (
     <span className={`relative inline-block shrink-0 ${className}`} style={{ width: size, height: size }}>
-      <span
-        className="block h-full w-full rounded-full"
-        style={{
-          background: `radial-gradient(circle at 32% 30%, ${a}, ${b})`,
-          boxShadow: ring ? `0 0 0 2px ${ringColor}, 0 0 0 4px #fff` : 'none',
-        }}
-      />
+      {showPhoto ? (
+        <img
+          src={photoUrl}
+          alt=""
+          onError={() => setFailed(true)}
+          className="block h-full w-full rounded-full object-cover"
+          style={{ boxShadow: ring ? `0 0 0 2px ${ringColor}, 0 0 0 4px #fff` : 'none' }}
+        />
+      ) : (
+        <span
+          className="block h-full w-full rounded-full"
+          style={{
+            background: `radial-gradient(circle at 32% 30%, ${a}, ${b})`,
+            boxShadow: ring ? `0 0 0 2px ${ringColor}, 0 0 0 4px #fff` : 'none',
+          }}
+        />
+      )}
       {live && (
         <span className="absolute -bottom-1 left-1/2 -translate-x-1/2 rounded bg-rose-600 px-1 py-[1px] text-[8px] font-bold uppercase tracking-wide text-white">
           Live

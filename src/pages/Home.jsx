@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Phone, Video, Image as ImageIcon, Users, Coins, RotateCw } from 'lucide-react'
 import { useApp } from '../store/AppStore'
@@ -12,6 +12,31 @@ const CARD_G = [
   ['#8f7fe0', '#5b28d6'], ['#a99be8', '#6a4fd0'], ['#e6b980', '#c9822b'],
   ['#7fd6a8', '#3f9878'], ['#d68f9b', '#9b3f5f'], ['#8fb0e8', '#4a6bb0'],
 ]
+
+// Small in-memory cache so switching tabs doesn't re-fetch the same host's
+// gallery every time the grid remounts.
+const galleryCache = new Map()
+function useHostGallery(hostId) {
+  const [photos, setPhotos] = useState(() => galleryCache.get(hostId) ?? null)
+  useEffect(() => {
+    if (galleryCache.has(hostId)) {
+      setPhotos(galleryCache.get(hostId))
+      return
+    }
+    let alive = true
+    hostsApi.gallery(hostId)
+      .then((res) => {
+        const items = (res.items || []).filter((it) => it.mediaType === 'photo' && it.url)
+        galleryCache.set(hostId, items)
+        if (alive) setPhotos(items)
+      })
+      .catch(() => {
+        if (alive) setPhotos([])
+      })
+    return () => { alive = false }
+  }, [hostId])
+  return photos
+}
 
 async function fetchTab(tab) {
   if (tab === 'Following') {
@@ -40,7 +65,16 @@ export default function Home() {
       .then((list) => alive && setHosts(list))
       .catch((err) => alive && setError(err instanceof ApiError ? err.message : 'Could not load creators'))
       .finally(() => alive && setLoading(false))
-    return () => { alive = false }
+
+    // There's no realtime "host came online" push from the backend yet, so
+    // sitting on Home never otherwise learns about it. Poll quietly in the
+    // background (no skeleton/error flicker) so newly-online hosts and
+    // status changes show up without navigating away and back.
+    const iv = setInterval(() => {
+      fetchTab(tab).then((list) => alive && setHosts(list)).catch(() => {})
+    }, 15000)
+
+    return () => { alive = false; clearInterval(iv) }
   }, [tab])
 
   const list = useMemo(
@@ -106,24 +140,7 @@ export function CreatorCard({ c, seed = 0, onCall }) {
   return (
     <div className="group">
       <button onClick={() => nav(`/creator/${c.id}`)} className="block w-full text-left">
-        <GradientBox from={from} to={to} seed={seed} className="aspect-[4/5] rounded-2xl">
-          {c.live && (
-            <span className="absolute left-2.5 top-2.5 flex items-center gap-1 rounded-md bg-rose-600 px-1.5 py-0.5 text-[10px] font-bold uppercase text-white">
-              <span className="h-1.5 w-1.5 rounded-full bg-white" /> Live
-            </span>
-          )}
-          <span className={`absolute right-2.5 top-2.5 h-3 w-3 rounded-full border-2 border-white ${c.online ? 'bg-green-400' : 'bg-gray-400'}`} />
-          <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 to-transparent p-3">
-            <div className="flex items-center gap-1.5">
-              <Avatar id={c.id} size={20} />
-              <span className="truncate text-[14px] font-semibold text-white">{c.name}</span>
-            </div>
-            <div className="mt-1 flex items-center gap-2.5 text-[11px] text-white/90">
-              <span className="flex items-center gap-1 text-gold"><Coins size={11} /> ₹{Math.round(c.ratePaise / 100)}/min</span>
-              <span className="flex items-center gap-1"><ImageIcon size={11} /> {c.galleryCount}</span>
-            </div>
-          </div>
-        </GradientBox>
+        <CardMedia c={c} from={from} to={to} seed={seed} />
       </button>
       <button
         onClick={onCall}
@@ -131,6 +148,91 @@ export function CreatorCard({ c, seed = 0, onCall }) {
       >
         <Video size={15} /> Call {c.name}
       </button>
+    </div>
+  )
+}
+
+function CardMedia({ c, from, to, seed }) {
+  const photos = useHostGallery(c.id)
+  const [idx, setIdx] = useState(0)
+  const scrollRef = useRef(null)
+
+  const onScroll = (e) => {
+    const el = e.currentTarget
+    const i = Math.round(el.scrollLeft / el.clientWidth)
+    if (i !== idx) setIdx(i)
+  }
+
+  const hasPhotos = photos && photos.length > 0
+
+  // Auto-advance the carousel every 3s; the timer restarts on every index
+  // change (auto or manual swipe), so a manual swipe just resets the clock
+  // instead of fighting it.
+  useEffect(() => {
+    if (!hasPhotos || photos.length < 2) return
+    const timer = setInterval(() => {
+      const el = scrollRef.current
+      if (!el) return
+      const next = (idx + 1) % photos.length
+      el.scrollTo({ left: next * el.clientWidth, behavior: 'smooth' })
+    }, 3000)
+    return () => clearInterval(timer)
+  }, [hasPhotos, photos, idx])
+
+  return (
+    <div className="relative aspect-[4/5] overflow-hidden rounded-2xl bg-gray-100 dark:bg-white/5">
+      {hasPhotos ? (
+        <div
+          ref={scrollRef}
+          onScroll={onScroll}
+          className="thin-scroll flex h-full w-full snap-x snap-mandatory overflow-x-auto"
+        >
+          {photos.map((p) => (
+            <img
+              key={p.id}
+              src={p.url}
+              alt=""
+              draggable={false}
+              className="h-full w-full shrink-0 snap-center object-cover"
+            />
+          ))}
+        </div>
+      ) : (
+        <GradientBox from={from} to={to} seed={seed} className="h-full w-full">
+          <div className="absolute inset-0 grid place-items-center">
+            <Avatar id={c.id} photoUrl={c.avatarUrl} size={56} />
+          </div>
+        </GradientBox>
+      )}
+
+      {hasPhotos && photos.length > 1 && (
+        <div className="pointer-events-none absolute inset-x-0 top-2 flex justify-center gap-1">
+          {photos.map((_, i) => (
+            <span
+              key={i}
+              className={`h-1 rounded-full transition-all ${i === idx ? 'w-4 bg-white' : 'w-1.5 bg-white/50'}`}
+            />
+          ))}
+        </div>
+      )}
+
+      {c.live && (
+        <span className="pointer-events-none absolute left-2.5 top-2.5 flex items-center gap-1 rounded-md bg-rose-600 px-1.5 py-0.5 text-[10px] font-bold uppercase text-white">
+          <span className="h-1.5 w-1.5 rounded-full bg-white" /> Live
+        </span>
+      )}
+      <span className={`pointer-events-none absolute right-2.5 top-2.5 h-3 w-3 rounded-full border-2 border-white ${c.online ? 'bg-green-400' : 'bg-gray-400'}`} />
+
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 to-transparent p-3">
+        <div className="flex items-center gap-1.5">
+          <Avatar id={c.id} photoUrl={c.avatarUrl} size={20} />
+          <span className="truncate text-[14px] font-semibold text-white">{c.name}</span>
+        </div>
+        <div className="mt-1 flex items-center gap-2.5 text-[11px] text-white/90">
+          <span className="flex items-center gap-1 text-gold"><Coins size={11} /> ₹{Math.round(c.ratePaise / 100)}/min</span>
+          <span className="flex items-center gap-1"><ImageIcon size={11} /> {c.galleryCount}</span>
+        </div>
+      </div>
     </div>
   )
 }

@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import {
   BadgeCheck, Heart, MessageSquare, Gift, Video, Play, MoreHorizontal, EyeOff, Flag, Ban, Users, Loader2, RotateCw,
+  X, ChevronLeft, ChevronRight,
 } from 'lucide-react'
 import { useApp } from '../store/AppStore'
 import { Avatar, GradientBox, Button, Card, Segmented, Modal, EmptyState } from '../components/ui'
@@ -29,6 +30,8 @@ export default function Creator() {
   const [call, setCall] = useState(false)
   const [gift, setGift] = useState(false)
   const [followBusy, setFollowBusy] = useState(false)
+  const [galleryItems, setGalleryItems] = useState([])
+  const [viewerIndex, setViewerIndex] = useState(null)
 
   const load = () => {
     setLoading(true)
@@ -40,6 +43,26 @@ export default function Creator() {
   }
 
   useEffect(load, [id]) // eslint-disable-line
+
+  // A dedicated per-host gallery endpoint — separate from GET /hosts/:id,
+  // whose own `gallery` field is always empty. This route doesn't exist yet
+  // on the backend (404s until it's added); failures are swallowed so the
+  // page still works, just showing the placeholder tiles in the meantime.
+  useEffect(() => {
+    let alive = true
+    hostsApi.gallery(id)
+      .then((res) => {
+        if (!alive) return
+        const items = (res.items || res.gallery || []).map((it) => ({
+          id: it.id,
+          url: it.url,
+          type: it.mediaType === 'video' ? 'video' : 'photo',
+        }))
+        setGalleryItems(items)
+      })
+      .catch(() => {})
+    return () => { alive = false }
+  }, [id])
 
   if (loading) return <div className="grid place-items-center py-24"><Loader2 size={26} className="animate-spin text-subtle" /></div>
   if (error || !c) {
@@ -83,7 +106,7 @@ export default function Creator() {
         <div className="lg:sticky lg:top-20 lg:self-start">
           <Card className="p-5">
             <div className="flex items-start gap-4">
-              <Avatar id={c.id} size={72} ring ringColor={c.online ? '#2fb37a' : '#c9c9d2'} />
+              <Avatar id={c.id} photoUrl={c.avatarUrl} size={72} ring ringColor={c.online ? '#2fb37a' : '#c9c9d2'} />
               <div className="min-w-0 pt-1">
                 <div className="flex items-center gap-1.5">
                   <span className="text-[19px] font-bold text-ink">{c.name}</span>
@@ -155,12 +178,23 @@ export default function Creator() {
             </div>
           ) : (
             <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
-              {(c.gallery?.length ? c.gallery : Array.from({ length: c.galleryCount || 6 })).map((item, i) => {
+              {(galleryItems.length ? galleryItems : Array.from({ length: c.galleryCount || 6 })).map((item, i) => {
                 const [a, b] = MEDIA_G[i % MEDIA_G.length]
                 return (
-                  <GradientBox key={i} from={a} to={b} seed={i} className="aspect-square rounded-xl">
-                    <span className="absolute inset-0 grid place-items-center text-white/90"><Play size={22} className="fill-white" /></span>
-                  </GradientBox>
+                  <button
+                    key={item?.id ?? i}
+                    type="button"
+                    onClick={() => (item?.url ? setViewerIndex(i) : toast("This photo isn't available yet"))}
+                    className="block w-full text-left"
+                  >
+                    <GradientBox from={a} to={b} seed={i} className="aspect-square rounded-xl">
+                      {item?.url && item.type !== 'video' ? (
+                        <img src={item.url} alt="" className="absolute inset-0 h-full w-full object-cover" />
+                      ) : (
+                        <span className="absolute inset-0 grid place-items-center text-white/90"><Play size={22} className="fill-white" /></span>
+                      )}
+                    </GradientBox>
+                  </button>
                 )
               })}
             </div>
@@ -184,6 +218,85 @@ export default function Creator() {
           onClose={() => setGift(false)}
           onSend={sendGift}
         />
+      )}
+
+      {viewerIndex !== null && (
+        <GalleryViewer items={galleryItems} index={viewerIndex} onIndexChange={setViewerIndex} onClose={() => setViewerIndex(null)} />
+      )}
+    </div>
+  )
+}
+
+// Swipeable full-screen photo/video viewer — native horizontal scroll-snap
+// rather than custom drag-tracking, so touch swipe works for free and there's
+// nothing to fight the browser's own momentum/rubber-banding over. Arrow
+// buttons + dot indicators cover mouse/desktop use of the same gesture.
+function GalleryViewer({ items, index, onIndexChange, onClose }) {
+  const scrollRef = useRef(null)
+  const suppressScrollRef = useRef(false)
+
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el) return
+    suppressScrollRef.current = true
+    el.scrollTo({ left: index * el.clientWidth, behavior: 'instant' })
+    // Let the programmatic scroll settle before onScroll starts reacting to it.
+    const t = setTimeout(() => { suppressScrollRef.current = false }, 50)
+    return () => clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const goTo = (i) => {
+    const el = scrollRef.current
+    if (!el || i < 0 || i >= items.length) return
+    el.scrollTo({ left: i * el.clientWidth, behavior: 'smooth' })
+  }
+
+  const onScroll = () => {
+    if (suppressScrollRef.current) return
+    const el = scrollRef.current
+    if (!el) return
+    const i = Math.round(el.scrollLeft / el.clientWidth)
+    if (i !== index) onIndexChange(i)
+  }
+
+  return (
+    <div className="fixed inset-0 z-[110] flex flex-col bg-black/95" onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="flex items-center justify-between p-4 text-white">
+        <span className="text-[13px] font-medium">{index + 1} / {items.length}</span>
+        <button onClick={onClose} className="grid h-9 w-9 place-items-center rounded-full bg-white/10"><X size={18} /></button>
+      </div>
+
+      <div ref={scrollRef} onScroll={onScroll} className="thin-scroll flex flex-1 snap-x snap-mandatory overflow-x-auto">
+        {items.map((item) => (
+          <div key={item.id} className="flex h-full w-full shrink-0 snap-center items-center justify-center p-4">
+            {item.type === 'video' ? (
+              <video src={item.url} controls className="max-h-full max-w-full rounded-lg" />
+            ) : (
+              <img src={item.url} alt="" className="max-h-full max-w-full rounded-lg object-contain" />
+            )}
+          </div>
+        ))}
+      </div>
+
+      {items.length > 1 && (
+        <>
+          {index > 0 && (
+            <button onClick={() => goTo(index - 1)} className="absolute left-2 top-1/2 hidden -translate-y-1/2 place-items-center rounded-full bg-white/10 p-2 text-white sm:grid">
+              <ChevronLeft size={22} />
+            </button>
+          )}
+          {index < items.length - 1 && (
+            <button onClick={() => goTo(index + 1)} className="absolute right-2 top-1/2 hidden -translate-y-1/2 place-items-center rounded-full bg-white/10 p-2 text-white sm:grid">
+              <ChevronRight size={22} />
+            </button>
+          )}
+          <div className="flex items-center justify-center gap-1.5 pb-6">
+            {items.map((_, i) => (
+              <span key={i} className={`h-1.5 rounded-full transition-all ${i === index ? 'w-5 bg-white' : 'w-1.5 bg-white/30'}`} />
+            ))}
+          </div>
+        </>
       )}
     </div>
   )

@@ -47,7 +47,7 @@ export default function Profile() {
       <h1 className="text-[22px] font-extrabold tracking-tight text-ink">Profile</h1>
 
       <Card className="mt-4 flex items-center gap-4 p-4">
-        <Avatar id={u.id || 'me'} size={60} ring ringColor="#5b28d6" />
+        <Avatar id={u.id || 'me'} photoUrl={u.avatarUrl} size={60} ring ringColor="#5b28d6" />
         <div className="flex-1">
           <div className="flex items-center gap-2">
             <span className="text-[17px] font-bold text-ink">{userName(u)}</span>

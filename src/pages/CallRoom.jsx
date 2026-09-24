@@ -69,6 +69,7 @@ export default function CallRoom() {
   const stageRef = useRef(null)
   const pipRef = useRef(null)
   const pipDragRef = useRef({ dragging: false, pointerId: null, startClientX: 0, startClientY: 0, startX: 0, startY: 0, moved: 0 })
+  const chatFeedRef = useRef(null)
 
   // set up: fetch host (for name/avatar/rate) + initiate the call. The backend
   // hands back this user's own Agora channel/token right here (POST /calls) —
@@ -346,6 +347,15 @@ export default function CallRoom() {
   }, [phase, call?.channelName, call?.agoraToken]) // eslint-disable-line
 
   useEffect(() => { sessionRef.current?.localAudioTrack?.setEnabled(!muted) }, [muted])
+
+  // Without this, new messages append at the bottom of the DOM but the
+  // scrolled view stays wherever it was — usually the top, showing old
+  // messages — so a new one never becomes visible until the user manually
+  // scrolls down. Instagram/WhatsApp always follow the latest message; this
+  // does the same.
+  useEffect(() => {
+    chatFeedRef.current?.scrollTo({ top: chatFeedRef.current.scrollHeight, behavior: 'smooth' })
+  }, [chatLog.length])
 
   // Camera list is only fetchable once we hold a live camera permission (i.e.
   // after the join actually acquired one) — fetching it any earlier would
@@ -740,8 +750,12 @@ export default function CallRoom() {
         )}
 
         {showChat && phase === 'active' && (
-          <div className="absolute bottom-4 left-4 right-4 sm:right-auto sm:w-80 rounded-2xl bg-black/45 backdrop-blur flex flex-col">
-            <div className="thin-scroll max-h-40 space-y-1.5 overflow-y-auto p-3 text-[13px]">
+          <div className="absolute bottom-4 left-4 right-4 sm:right-auto sm:w-80 rounded-2xl flex flex-col">
+            {/* max-h-40 (160px) is a flat cap that's fine in portrait but eats
+                over half the screen in landscape/short viewports, where it
+                visibly covers the host's video — clamp it to the viewport's
+                own height instead so it always leaves the video mostly clear. */}
+            <div ref={chatFeedRef} className="thin-scroll max-h-[28vh] min-h-0 space-y-1.5 overflow-y-auto p-3 text-[13px]">
               {chatLog.length === 0 && <p className="text-white/50">Messages during this call show up here.</p>}
               {chatLog.map((m, i) => (
                 <p key={m.id ?? i} className={m.senderId && m.senderId === hostId ? 'text-left' : 'text-right'}>

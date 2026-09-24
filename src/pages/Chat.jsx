@@ -146,7 +146,14 @@ function Conversation({ hostId, conversationId: initialConvId }) {
   const loadMessages = (cid) => {
     if (!cid) { setLoading(false); return }
     chatApi.messages(cid, 1, 50)
-      .then((res) => setMessages((res.messages || res.items || []).map((m) => normalizeMessage(m, state.user?.id))))
+      .then((res) => {
+        // The API returns page 1 as the newest messages first (descending).
+        // Reverse to chronological order so the feed reads oldest-to-newest,
+        // top-to-bottom, like Instagram/WhatsApp — not newest-on-top.
+        const list = (res.messages || res.items || []).map((m) => normalizeMessage(m, state.user?.id))
+        list.reverse()
+        setMessages(list)
+      })
       .catch(() => {})
       .finally(() => setLoading(false))
   }

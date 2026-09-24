@@ -65,23 +65,51 @@ export class ApiError extends Error {
 
 let refreshPromise = null
 
+// Refresh tokens rotate and are single-use — the backend rejects a second
+// attempt to redeem the same one with "already-used refresh token." Two tabs
+// (or a lingering background tab plus a freshly opened one — extremely
+// common on mobile, where old tabs don't really "close") that both discover
+// an expired access token around the same time each fire their own refresh
+// with the same token. The loser's request fails, and failing a refresh used
+// to unconditionally clearSession() — which wipes *both* tabs' session from
+// the shared localStorage, even though the winner had just successfully
+// refreshed a moment earlier. That's the exact "logs in fine, then next time
+// it asks for everything again" pattern. The Web Locks API serializes this
+// across tabs/documents of the same origin; whoever loses the race waits for
+// the winner to finish, then adopts whatever session the winner already
+// saved instead of attempting its own now-doomed redeem. Falls back to a
+// direct (unlocked) refresh in browsers without Web Locks support.
+async function performRefresh(tokenAtCallTime) {
+  // By the time we actually run (immediately, or after waiting for the lock),
+  // another tab may have already redeemed this exact token — reusing its
+  // result avoids the "already-used" failure entirely.
+  const current = loadSession()
+  if (current.accessToken && current.refreshToken && current.refreshToken !== tokenAtCallTime) {
+    session = current
+    return { accessToken: current.accessToken, refreshToken: current.refreshToken }
+  }
+  const res = await fetch(`${API_BASE_URL}/user/auth/token/refresh`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ refreshToken: tokenAtCallTime }),
+  })
+  if (!res.ok) throw new ApiError('Session expired', res.status)
+  const data = await res.json()
+  saveSession({ accessToken: data.accessToken, refreshToken: data.refreshToken || tokenAtCallTime, userId: session.userId })
+  return data
+}
+
 async function refreshAccessToken() {
   if (!session.refreshToken) throw new ApiError('No refresh token', 401)
   if (!refreshPromise) {
-    refreshPromise = fetch(`${API_BASE_URL}/user/auth/token/refresh`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ refreshToken: session.refreshToken }),
+    const tokenAtCallTime = session.refreshToken
+    refreshPromise = (
+      typeof navigator !== 'undefined' && navigator.locks?.request
+        ? navigator.locks.request('vibe-token-refresh', () => performRefresh(tokenAtCallTime))
+        : performRefresh(tokenAtCallTime)
+    ).finally(() => {
+      refreshPromise = null
     })
-      .then(async (res) => {
-        if (!res.ok) throw new ApiError('Session expired', res.status)
-        const data = await res.json()
-        saveSession({ accessToken: data.accessToken, refreshToken: data.refreshToken || session.refreshToken, userId: session.userId })
-        return data
-      })
-      .finally(() => {
-        refreshPromise = null
-      })
   }
   return refreshPromise
 }
@@ -111,6 +139,15 @@ async function request(path, { method = 'GET', body, auth = true, retry = true }
       await refreshAccessToken()
       return request(path, { method, body, auth, retry: false })
     } catch {
+      // Last-resort safety net for browsers without Web Locks (see
+      // performRefresh above): if another tab already won a refresh race and
+      // wrote a newer session while ours was failing, adopt it instead of
+      // wiping out a session that's actually still perfectly valid.
+      const current = loadSession()
+      if (current.accessToken && current.accessToken !== session.accessToken) {
+        session = current
+        return request(path, { method, body, auth, retry: false })
+      }
       clearSession()
       throw new ApiError('Session expired', 401)
     }
@@ -149,6 +186,7 @@ export const meApi = {
   get: () => request('/me'),
   update: (patch) => request('/me', { method: 'PATCH', body: patch }),
   verifyAge: () => request('/me/verify-age', { method: 'POST' }),
+  avatarUploadUrl: (contentType) => request('/me/avatar/upload-url', { method: 'POST', body: { contentType } }),
   kycUploadUrl: (contentType) => request('/me/kyc/upload-url', { method: 'POST', body: { contentType } }),
   submitKyc: (documents) => request('/me/kyc', { method: 'POST', body: { documents } }),
   getKyc: () => request('/me/kyc'),
@@ -171,6 +209,7 @@ export const hostsApi = {
   get: (id) => request(`/hosts/${id}`),
   follow: (id) => request(`/hosts/${id}/follow`, { method: 'POST' }),
   unfollow: (id) => request(`/hosts/${id}/unfollow`, { method: 'POST' }),
+  gallery: (id) => request(`/hosts/${id}/gallery`),
 }
 
 /* ---------------- Wallet & Recharge ---------------- */

@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   ChevronLeft, Check, ShieldCheck, BadgeCheck, Crown, Globe, Video, Radio, MessageSquare,
-  FileText, HelpCircle, Flag, Trash2, CreditCard, Percent, Headphones, ChevronRight, Loader2, Star,
+  FileText, HelpCircle, Flag, Trash2, CreditCard, Percent, Headphones, ChevronRight, Loader2, Star, Camera,
 } from 'lucide-react'
 import { useApp } from '../store/AppStore'
 import { Avatar, Button, Card, Toggle, EmptyState } from '../components/ui'
@@ -34,6 +34,8 @@ export function EditProfile() {
   const [email, setEmail] = useState(u.email || '')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [avatarUploading, setAvatarUploading] = useState(false)
+  const fileInputRef = useRef(null)
 
   const save = async () => {
     setBusy(true)
@@ -53,10 +55,45 @@ export function EditProfile() {
     }
   }
 
+  const pickAvatar = () => fileInputRef.current?.click()
+
+  const uploadAvatar = async (file) => {
+    if (!file) return
+    // The backend's presigned-URL endpoint only accepts these two exact
+    // content types — anything else (webp, heic, gif...) is rejected before
+    // ever reaching S3.
+    const contentType = file.type === 'image/png' ? 'image/png' : 'image/jpeg'
+    setAvatarUploading(true)
+    try {
+      const { uploadUrl, url } = await meApi.avatarUploadUrl(contentType)
+      await uploadToS3(uploadUrl, file, contentType)
+      await meApi.update({ avatarUrl: url })
+      actions.patchUserLocal({ avatarUrl: url })
+      await actions.refreshUser()
+      toast('Profile photo updated')
+    } catch (err) {
+      toast(err instanceof ApiError ? err.message : 'Could not update photo', { tone: 'error' })
+    } finally {
+      setAvatarUploading(false)
+    }
+  }
+
   return (
     <Sub title="Edit Profile">
       <div className="flex flex-col items-center">
-        <Avatar id={u.id || 'me'} size={88} ring ringColor="#5b28d6" />
+        <button type="button" onClick={pickAvatar} disabled={avatarUploading} className="relative" title="Change profile photo">
+          <Avatar id={u.id || 'me'} photoUrl={u.avatarUrl} size={88} ring ringColor="#5b28d6" />
+          <span className="absolute bottom-0 right-0 grid h-7 w-7 place-items-center rounded-full border-2 border-card bg-brand text-white">
+            {avatarUploading ? <Loader2 size={13} className="animate-spin" /> : <Camera size={13} />}
+          </span>
+        </button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/jpeg,image/png"
+          className="hidden"
+          onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; uploadAvatar(f) }}
+        />
         <h2 className="mt-2.5 text-[18px] font-bold text-ink">{userName({ ...u, name, username })}</h2>
         {(username || u.username) && (
           <p className="text-[13px] font-medium text-brand">@{username || u.username}</p>

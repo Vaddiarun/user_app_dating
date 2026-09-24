@@ -9,6 +9,12 @@ export function normalizeHost(h) {
   return {
     id: h.id || h.hostId,
     name: h.name || 'Host',
+    // Not present on either /hosts (list) or /hosts/:id (detail) as of the
+    // last check against the live backend — hosts have no photo field at all
+    // yet, only the (also currently empty) gallery array. Read defensively
+    // anyway so this starts working the moment the backend adds it, with no
+    // further frontend change needed.
+    avatarUrl: h.avatarUrl || h.photoUrl || null,
     bio: h.bio || '',
     ratePaise: h.ratePerMinutePaise ?? 0,
     rating: h.rating?.average ?? 0,
