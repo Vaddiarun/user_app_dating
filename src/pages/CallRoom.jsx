@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
-  Mic, MicOff, MessageSquare, Gift, PhoneOff, X, AlertTriangle, Wallet, RotateCw, SwitchCamera, HeartHandshake, Send,
+  Mic, MicOff, MessageSquare, Gift, PhoneOff, X, AlertTriangle, Wallet, RotateCw, SwitchCamera, HeartHandshake, Send, Smile,
 } from 'lucide-react'
 import { useApp } from '../store/AppStore'
 import { Avatar, Button } from '../components/ui'
@@ -20,6 +20,43 @@ const POLL_MS = 5000
 // in-progress, everything else is terminal.
 const TERMINAL_CALL_STATUSES = ['completed', 'rejected', 'missed', 'failed']
 
+// How long a message floats over the video before it fades out.
+const COMMENT_LIFETIME_MS = 8000
+const COMMENT_FADE_MS = 1200
+
+/** Instagram/TikTok-live style floating messages — no panel, just text over the
+ * video, kept legible with a text shadow. Callers should filter `messages` to
+ * the last few within COMMENT_LIFETIME_MS and re-render periodically (the call's
+ * own elapsed-time ticker already does this every second) to advance the fade. */
+function FloatingComments({ messages, className = '' }) {
+  const now = Date.now()
+  const mask = 'linear-gradient(to bottom, transparent, #000 30%)'
+  return (
+    <div className={`overflow-hidden ${className}`} style={{ maskImage: mask, WebkitMaskImage: mask }}>
+      <div className="flex min-h-full flex-col justify-end gap-1.5">
+        {messages.map((m, i) => {
+          const age = now - m.at
+          const fading = age > COMMENT_LIFETIME_MS - COMMENT_FADE_MS
+          return (
+            <div key={m.id ?? i} className="transition-opacity" style={{ opacity: fading ? 0 : 1, transitionDuration: `${COMMENT_FADE_MS}ms` }}>
+              <p className="max-w-[90%] text-[13px] leading-snug text-white" style={{ textShadow: '0 1px 3px rgba(0,0,0,.75)' }}>
+                {m.content}
+              </p>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+const EMOJIS = [
+  '😀', '😂', '😍', '😘', '😉', '😊', '🥰', '😎', '🤩', '😜', '🙃', '😇',
+  '🤗', '🤔', '😏', '😅', '😭', '😡', '👍', '👏', '🙏', '🔥', '💯', '❤️',
+  '💕', '💖', '💋', '🎉', '✨', '🌹', '🎁', '😴', '😢', '😱', '🥳', '😌',
+  '🤍', '💔', '🤝', '👀', '😋', '🤤', '😳', '🥺', '😤', '😆', '🫶', '💃',
+]
+
 export default function CallRoom() {
   const { id: hostId } = useParams()
   const [sp] = useSearchParams()
@@ -36,6 +73,7 @@ export default function CallRoom() {
   const [ringSeconds, setRingSeconds] = useState(0)
   const [muted, setMuted] = useState(false)
   const [showChat, setShowChat] = useState(false)
+  const [showEmoji, setShowEmoji] = useState(false)
   const [gift, setGift] = useState(false)
   const [chatLog, setChatLog] = useState([])
   const [chatText, setChatText] = useState('')
@@ -229,7 +267,7 @@ export default function CallRoom() {
       // above, since chat:message only carries senderId, no callId.
       unsubs.push(onSocketEvent('chat:message', (m) => {
         if (m?.senderId !== hostId) return
-        setChatLog((l) => [...l, { id: m.messageId, senderId: m.senderId, content: m.content }])
+        setChatLog((l) => [...l, { id: m.messageId, senderId: m.senderId, content: m.content, at: Date.now() }])
       }))
     }
     attach()
@@ -471,9 +509,10 @@ export default function CallRoom() {
     setChatSending(true)
     setChatErr('')
     setChatText('')
+    setShowEmoji(false)
     try {
       const res = await chatApi.send(hostId, content)
-      setChatLog((l) => [...l, { id: res.messageId, senderId: res.senderId, content: res.content }])
+      setChatLog((l) => [...l, { id: res.messageId, senderId: res.senderId, content: res.content, at: Date.now() }])
     } catch (err) {
       setChatText(content)
       setChatErr(err instanceof ApiError ? err.message : 'Could not send that message.')
@@ -672,21 +711,20 @@ export default function CallRoom() {
         })()}
 
         {giftRequest && phase === 'active' && (
-          <div className="absolute inset-x-4 top-3 z-[63] rounded-2xl bg-black/60 p-3 backdrop-blur">
-            <div className="flex items-center gap-2.5">
-              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-gold/20 text-gold"><HeartHandshake size={18} /></span>
-              <div className="min-w-0 flex-1">
-                <p className="text-[13px] font-semibold text-white">
-                  {c?.name || 'Host'} is requesting a gift
-                </p>
-                <p className="truncate text-[12px] text-white/60">
-                  {giftRequest.gift
-                    ? `${giftRequest.gift.name} · ₹${Math.round(giftRequest.gift.pricePaise / 100)}`
-                    : 'Choose a gift to send'}
-                </p>
-              </div>
+          <div className="absolute inset-0 z-[63] flex animate-fadeIn items-center justify-center bg-black/55 px-6 backdrop-blur-sm">
+          <div className="w-full max-w-[320px] animate-splashPop rounded-3xl bg-black/80 p-5 text-center shadow-2xl ring-1 ring-white/10 backdrop-blur">
+            <div className="flex flex-col items-center">
+              <span className="grid h-14 w-14 shrink-0 place-items-center rounded-full bg-gold/20 text-gold"><HeartHandshake size={26} /></span>
+              <p className="mt-3 text-[16px] font-bold text-white">
+                {c?.name || 'Host'} is requesting a gift
+              </p>
+              <p className="mt-1 text-[13px] text-white/60">
+                {giftRequest.gift
+                  ? `${giftRequest.gift.name} · ₹${Math.round(giftRequest.gift.pricePaise / 100)}`
+                  : 'Choose a gift to send'}
+              </p>
             </div>
-            <div className="mt-2.5 flex gap-2">
+            <div className="mt-4 flex gap-2">
               <button
                 onClick={() => {
                   if (giftRequest.gift) { acceptGiftRequest(giftRequest.gift); return }
@@ -706,6 +744,7 @@ export default function CallRoom() {
                 Not now
               </button>
             </div>
+          </div>
           </div>
         )}
 
@@ -750,6 +789,17 @@ export default function CallRoom() {
           </div>
         )}
 
+        {/* With the chat panel closed, the host's messages still float up over the
+            video for a few seconds (Instagram-live style) instead of arriving
+            unseen until you tap the chat icon. Re-rendered every second by the
+            call's own elapsed-time ticker, which is what advances the fade-out. */}
+        {!showChat && phase === 'active' && (
+          <FloatingComments
+            messages={chatLog.filter((m) => m.senderId === hostId && m.at && Date.now() - m.at < COMMENT_LIFETIME_MS).slice(-4)}
+            className="pointer-events-none absolute bottom-4 left-4 right-4 sm:right-auto sm:w-80 max-h-[28vh]"
+          />
+        )}
+
         {showChat && phase === 'active' && (
           <div className="absolute bottom-4 left-4 right-4 sm:right-auto sm:w-80 rounded-2xl flex flex-col">
             {/* max-h-40 (160px) is a flat cap that's fine in portrait but eats
@@ -768,6 +818,29 @@ export default function CallRoom() {
             </div>
             {chatErr && <p className="px-3 pb-1 text-[11px] text-rose-300">{chatErr}</p>}
             <div className="flex items-center gap-2 p-2.5 pt-0">
+              <div className="relative shrink-0">
+                {showEmoji && (
+                  <div className="thin-scroll absolute bottom-11 left-0 z-10 grid max-h-48 w-56 grid-cols-7 gap-1 overflow-y-auto rounded-2xl bg-black/80 p-2 backdrop-blur">
+                    {EMOJIS.map((e) => (
+                      <button
+                        key={e}
+                        type="button"
+                        onClick={() => setChatText((t) => t + e)}
+                        className="grid h-7 w-7 place-items-center rounded-lg text-[16px] hover:bg-white/10"
+                      >
+                        {e}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setShowEmoji((s) => !s)}
+                  className={`grid h-9 w-9 place-items-center rounded-full text-white ${showEmoji ? 'bg-white/25' : 'bg-white/10'}`}
+                >
+                  <Smile size={16} />
+                </button>
+              </div>
               <input
                 value={chatText}
                 onChange={(e) => setChatText(e.target.value)}
