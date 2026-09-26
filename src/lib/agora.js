@@ -27,6 +27,12 @@ export function appIdFromToken(token) {
   return new TextDecoder().decode(bytes.slice(o, o + appIdLen))
 }
 
+// Agora bills each participant by the total resolution they *receive*: up to 921,600px
+// (1280x720) is the HD tier, anything above is Full HD at ~2.25x the price. 720p is the
+// best quality that stays in HD — the SDK's default (480p) costs exactly the same.
+// '720p_1' = 1280x720 @ 15fps. Don't raise this to 1080p without re-checking the bill.
+const CALL_VIDEO_ENCODER = '720p_1'
+
 /** Joins an Agora RTC channel, publishes the local mic + camera, and returns everything
  * needed to render/control the session. `onRemoteUser(user, mediaType)` fires whenever a
  * remote participant's audio/video becomes available, already subscribed. */
@@ -57,7 +63,7 @@ export async function joinAndPublish({ channelName, token, uid, video = true, on
   let videoError = null
   if (video) {
     try {
-      localVideoTrack = await RTC.createCameraVideoTrack()
+      localVideoTrack = await RTC.createCameraVideoTrack({ encoderConfig: CALL_VIDEO_ENCODER })
     } catch (e) {
       videoError = e
     }
@@ -68,14 +74,20 @@ export async function joinAndPublish({ channelName, token, uid, video = true, on
 }
 
 /** Joins an Agora RTC channel purely to watch/listen — never acquires the local
- * mic/camera or publishes anything. For live-broadcast viewers, who share the
- * same 'rtc'-mode channel as the host but must never be prompted for their own
- * camera/mic permissions just to watch. */
+ * mic/camera or publishes anything. For live-broadcast viewers, who must never be
+ * prompted for their own camera/mic permissions just to watch.
+ *
+ * 'live' mode + 'audience' role, matching the host app's broadcast join (mode 'live',
+ * role 'host') — and the backend's SUBSCRIBER token. Latency level 1 ("low latency",
+ * ~1.5-2s) instead of the default level 2 ("ultra-low", ~0.5s): viewers are billed at
+ * Agora's cheaper Standard audience rate, and a second of delay doesn't matter for
+ * watching a stream (chat/gifts go over our own socket, not Agora). */
 export async function joinAsAudience({ channelName, token, uid, onRemoteUser } = {}) {
   const RTC = await sdk()
   RTC.setLogLevel(4)
   const appId = appIdFromToken(token)
-  const client = RTC.createClient({ mode: 'rtc', codec: 'vp8' })
+  const client = RTC.createClient({ mode: 'live', codec: 'vp8' })
+  await client.setClientRole('audience', { level: 1 })
 
   if (onRemoteUser) {
     client.on('user-published', async (user, mediaType) => {
@@ -108,7 +120,7 @@ export async function listCameras() {
  * Android Chrome and iOS Safari even when device labels aren't. */
 export async function switchCameraFacing(client, track, facingMode) {
   const RTC = await sdk()
-  const newTrack = await RTC.createCameraVideoTrack({ facingMode })
+  const newTrack = await RTC.createCameraVideoTrack({ facingMode, encoderConfig: CALL_VIDEO_ENCODER })
   try {
     if (track) {
       await client.unpublish(track)

@@ -169,6 +169,16 @@ export function LiveRoom() {
         if (payload?.broadcastId !== id || payload?.senderId === state.user?.id) return
         setMsgs((m) => [...m, { id: `${payload.senderId}-${payload.createdAt}`, n: payload.senderName || 'Someone', t: payload.content }])
       }))
+      // The host ended the broadcast (or the backend auto-ended/admin force-ended it).
+      // Agora bills every viewer for every minute they stay in the channel, even with no
+      // one publishing — so leave it right away rather than waiting for the viewer to
+      // navigate off a dead stream.
+      unsubs.push(onSocketEvent('live:ended', (payload) => {
+        if (payload?.broadcastId !== id) return
+        if (sessionRef.current) { leaveChannel(sessionRef.current); sessionRef.current = null }
+        toast('This live session has ended')
+        nav('/live', { replace: true })
+      }))
     }
     attach()
     return () => {
