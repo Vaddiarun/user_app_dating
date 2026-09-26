@@ -4,14 +4,14 @@ import {
   Send, Gift, Phone, Video, MoreVertical, ArrowLeft, Inbox, ShieldCheck, Flag, Ban, User, Loader2,
 } from 'lucide-react'
 import { useApp } from '../store/AppStore'
-import { Avatar, Button, EmptyState, Modal } from '../components/ui'
+import { Avatar, Button, EmptyState, Modal, HOST_STATUS } from '../components/ui'
 import { relTime, rupees, timeOfDay } from '../lib/format'
 import GiftPicker from '../components/GiftPicker'
 import { CallModal } from './Home'
 import { chatApi, hostsApi, giftsApi, ApiError } from '../lib/api'
 import { normalizeHost } from '../lib/normalize'
 import { useHostAvatarUrl } from '../lib/hostGallery'
-import { useHostOnline } from '../lib/socket'
+import { useHostStatus } from '../lib/socket'
 
 // Verified against the live backend: GET /chat/conversations returns
 // { conversations: [{ id, userId, hostId, lastMessageAt, createdAt, otherParticipant: { id, name, phone, role } }] }
@@ -119,7 +119,8 @@ function Conversation({ hostId, conversationId: initialConvId }) {
   const nav = useNavigate()
   const { state, actions, toast } = useApp()
   const [c, setC] = useState(null)
-  const online = useHostOnline(hostId, c?.online)
+  const statusKey = useHostStatus(hostId, c?.status)
+  const status = HOST_STATUS[statusKey]
   const [conversationId, setConversationId] = useState(initialConvId || null)
   const [messages, setMessages] = useState([])
   const [loading, setLoading] = useState(true)
@@ -217,12 +218,16 @@ function Conversation({ hostId, conversationId: initialConvId }) {
           <Avatar id={hostId} photoUrl={avatarUrl} size={38} ring ringColor="#e0a0a0" />
           <div className="text-left">
             <p className="text-[15px] font-semibold text-ink">{c?.name || '…'}</p>
-            <p className={`text-[12px] font-medium ${online ? 'text-green-600' : 'text-subtle'}`}>{online ? 'Online now' : 'Offline'}</p>
+            <p className={`flex items-center gap-1 text-[12px] font-medium ${status.text}`}>
+              <span className={`h-1.5 w-1.5 rounded-full ${status.dot}`} />
+              {statusKey === 'online' ? 'Online now' : statusKey === 'busy' ? 'Busy · in a call' : 'Offline'}
+            </p>
           </div>
         </button>
         <div className="flex-1" />
-        <button onClick={() => setCall(true)} className="rounded-lg border border-line p-2 hover:bg-gray-50 dark:hover:bg-white/5"><Phone size={16} /></button>
-        <button onClick={() => setCall(true)} className="rounded-lg bg-brand p-2 text-white"><Video size={16} /></button>
+        {/* Offline hosts can't take calls — messaging still works. */}
+        <button onClick={() => setCall(true)} disabled={statusKey === 'offline'} title={statusKey === 'offline' ? 'Host is offline — calls unavailable' : 'Voice call'} className="rounded-lg border border-line p-2 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent dark:hover:bg-white/5"><Phone size={16} /></button>
+        <button onClick={() => setCall(true)} disabled={statusKey === 'offline'} title={statusKey === 'offline' ? 'Host is offline — calls unavailable' : 'Video call'} className="rounded-lg bg-brand p-2 text-white disabled:cursor-not-allowed disabled:opacity-40"><Video size={16} /></button>
         <button onClick={() => setMenu(true)} className="rounded-lg border border-line p-2 hover:bg-gray-50 dark:hover:bg-white/5"><MoreVertical size={16} /></button>
       </div>
 

@@ -5,13 +5,13 @@ import {
   X, ChevronLeft, ChevronRight,
 } from 'lucide-react'
 import { useApp } from '../store/AppStore'
-import { Avatar, GradientBox, Button, Card, Segmented, Modal, EmptyState } from '../components/ui'
+import { Avatar, GradientBox, Button, Card, Segmented, Modal, EmptyState, HOST_STATUS } from '../components/ui'
 import { compact } from '../lib/format'
 import { CallModal } from './Home'
 import GiftPicker from '../components/GiftPicker'
 import { hostsApi, giftsApi, ApiError } from '../lib/api'
 import { normalizeHost } from '../lib/normalize'
-import { useHostOnline } from '../lib/socket'
+import { useHostStatus } from '../lib/socket'
 
 const MEDIA_G = [
   ['#7f9bd6', '#4a6bb0'], ['#a99be8', '#6a4fd0'], ['#e6c07a', '#c9962b'],
@@ -24,7 +24,8 @@ export default function Creator() {
   const nav = useNavigate()
   const { state, actions, toast } = useApp()
   const [c, setC] = useState(null)
-  const online = useHostOnline(id, c?.online)
+  const statusKey = useHostStatus(id, c?.status)
+  const status = HOST_STATUS[statusKey]
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [tab, setTab] = useState('Details')
@@ -111,7 +112,7 @@ export default function Creator() {
         <div className="lg:sticky lg:top-20 lg:self-start">
           <Card className="p-5">
             <div className="flex items-start gap-4">
-              <Avatar id={c.id} photoUrl={avatarUrl} size={72} ring ringColor={online ? '#2fb37a' : '#c9c9d2'} />
+              <Avatar id={c.id} photoUrl={avatarUrl} size={72} ring ringColor={status.ring} />
               <div className="min-w-0 pt-1">
                 <div className="flex items-center gap-1.5">
                   <span className="text-[19px] font-bold text-ink">{c.name}</span>
@@ -119,8 +120,8 @@ export default function Creator() {
                 </div>
                 <p className="text-[13px] text-subtle">{c.languages?.join(', ')}{c.age ? ` · ${c.age} yrs` : ''}</p>
                 <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px]">
-                  <span className={`flex items-center gap-1 font-medium ${online ? 'text-green-600' : 'text-subtle'}`}>
-                    <span className={`h-2 w-2 rounded-full ${online ? 'bg-green-500' : 'bg-gray-400'}`} /> {online ? 'Online' : 'Offline'}
+                  <span className={`flex items-center gap-1 font-medium ${status.text}`}>
+                    <span className={`h-2 w-2 rounded-full ${status.dot}`} /> {status.label}
                   </span>
                   {c.live && <span className="font-medium text-rose-500">● Live now</span>}
                   <span className="text-subtle">{compact(c.followerCount)} followers</span>
@@ -141,8 +142,9 @@ export default function Creator() {
               <Button variant="outline" size="sm" className="py-2.5" onClick={() => setGift(true)}>
                 <Gift size={15} /> Gift
               </Button>
-              <Button size="sm" className="py-2.5" onClick={() => setCall(true)}>
-                <Video size={15} /> Call
+              {/* Offline hosts can't take calls — Chat above stays available. */}
+              <Button size="sm" className="py-2.5" onClick={() => setCall(true)} disabled={statusKey === 'offline'} title={statusKey === 'offline' ? 'Offline — send a message instead' : undefined}>
+                <Video size={15} /> {statusKey === 'offline' ? 'Offline' : 'Call'}
               </Button>
             </div>
 

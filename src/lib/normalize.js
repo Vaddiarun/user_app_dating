@@ -4,6 +4,20 @@
 // nested under a different key depending on the endpoint (list vs. detail vs.
 // embedded in another resource like a live broadcast).
 
+/** 'online' | 'busy' | 'offline' from a host resource or a `presence:update` payload. Busy
+ * means online but currently in a call (or broadcasting). Reads every shape the backend may
+ * use — an explicit `status`/`presence` string, or `isBusy`/`inCall` flags next to `isOnline`. */
+export function hostStatusFrom(h) {
+  if (!h) return 'offline'
+  const explicit = String(h.status || h.presence || '').toLowerCase()
+  if (explicit === 'busy' || explicit === 'in_call' || explicit === 'incall' || explicit === 'live') return 'busy'
+  if (explicit === 'online') return 'online'
+  if (explicit === 'offline') return 'offline'
+  if (h.isOnline === false) return 'offline'
+  if (h.isBusy || h.inCall || h.isInCall || h.busy) return 'busy'
+  return h.isOnline ? 'online' : 'offline'
+}
+
 export function normalizeHost(h) {
   if (!h) return h
   return {
@@ -31,7 +45,8 @@ export function normalizeHost(h) {
     talksAboutTags: h.talksAboutTags || [],
     hobbies: h.hobbies || [],
     sports: h.sports || [],
-    online: h.isOnline ?? false,
+    status: hostStatusFrom(h),
+    online: hostStatusFrom(h) !== 'offline',
     // Neither "live" nor "verified" nor "category" exist on the host resource —
     // live status only exists per-broadcast (GET /live/broadcasts), and there's
     // no verification/category concept in this API. Left false/empty rather
@@ -46,6 +61,13 @@ export function normalizeHost(h) {
 
 export function normalizeHostList(res) {
   const list = res?.hosts || res?.items || res?.results || (Array.isArray(res) ? res : [])
+  // Dev-only: shows exactly which presence fields the backend sends per host, so
+  // online/busy/offline can be checked against hostStatusFrom() above.
+  if (import.meta.env.DEV && list.length) {
+    console.info('[presence] hosts from API:', list.map((h) => ({
+      name: h.name, isOnline: h.isOnline, isBusy: h.isBusy, inCall: h.inCall, status: h.status, presence: h.presence,
+    })))
+  }
   return list.map(normalizeHost)
 }
 

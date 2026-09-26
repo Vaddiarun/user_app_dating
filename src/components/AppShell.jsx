@@ -192,9 +192,7 @@ export default function AppShell({ children }) {
 function Brand() {
   return (
     <NavLink to="/" className="flex items-center gap-2 px-2">
-      <span className="grid h-8 w-8 place-items-center rounded-lg bg-brand text-white">
-        <Sparkles size={16} />
-      </span>
+      <img src="/logo.png" alt="Vibe" className="h-8 w-8 rounded-lg object-contain" />
       <span className="text-[16px] font-extrabold tracking-tight text-ink">Vibe</span>
     </NavLink>
   )

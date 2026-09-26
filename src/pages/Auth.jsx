@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { Sparkles, ChevronLeft, ChevronRight, Camera, ShieldCheck, ShieldAlert, Loader2, Clock } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Camera, ShieldCheck, ShieldAlert, Loader2, Clock } from 'lucide-react'
 import { Button } from '../components/ui'
 import { Avatar } from '../components/ui'
 import { useApp } from '../store/AppStore'
@@ -81,9 +81,7 @@ const AUTO_ADVANCE_MS = 1600
 function BrandMark() {
   return (
     <div className="text-center text-white">
-      <span className="mx-auto grid h-16 w-16 place-items-center rounded-2xl bg-brand animate-splashPop">
-        <Sparkles size={28} />
-      </span>
+      <img src="/logo.png" alt="Vibe" className="mx-auto block h-16 w-16 animate-splashPop object-contain rounded-2xl" />
       <h1 className="mt-4 animate-splashFadeUp text-[28px] font-extrabold tracking-tight" style={{ animationDelay: '150ms' }}>Vibe</h1>
       <p className="mt-1 animate-splashFadeUp text-[14px] text-white/60" style={{ animationDelay: '300ms' }}>Real conversations with creators</p>
     </div>

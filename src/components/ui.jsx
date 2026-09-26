@@ -235,3 +235,10 @@ export function ToastHost({ toasts }) {
     document.body,
   )
 }
+
+/** Colors + label for a host's presence — 'online' | 'busy' | 'offline' (see useHostStatus). */
+export const HOST_STATUS = {
+  online: { label: 'Online', dot: 'bg-green-500', text: 'text-green-600', ring: '#2fb37a' },
+  busy: { label: 'Busy', dot: 'bg-amber-500', text: 'text-amber-600', ring: '#f59e0b' },
+  offline: { label: 'Offline', dot: 'bg-gray-400', text: 'text-subtle', ring: '#c9c9d2' },
+}
