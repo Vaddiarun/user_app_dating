@@ -7,7 +7,7 @@ import { hostsApi, meApi, ApiError } from '../lib/api'
 import { normalizeHostList } from '../lib/normalize'
 import { userName } from '../lib/format'
 import { useHostGallery } from '../lib/hostGallery'
-import { useHostStatus } from '../lib/socket'
+import { useHostStatus, useSocketConnected } from '../lib/socket'
 
 const TABS = ['All', 'New', 'Popular', 'Following']
 const CARD_G = [
@@ -119,7 +119,7 @@ export default function Home() {
 export function CreatorCard({ c, seed = 0, onCall }) {
   const nav = useNavigate()
   const [from, to] = CARD_G[seed % CARD_G.length]
-  const offline = useHostStatus(c.id, c.status) === 'offline'
+  const offline = useHostStatus(c.id, c) === 'offline'
   return (
     <div className="group">
       <button onClick={() => nav(`/creator/${c.id}`)} className="block w-full text-left">
@@ -228,7 +228,13 @@ function CardMedia({ c, from, to, seed }) {
           <span className="h-1.5 w-1.5 rounded-full bg-white" /> Live
         </span>
       )}
-      <span className={`pointer-events-none absolute right-2.5 top-2.5 h-3 w-3 rounded-full border-2 border-white ${status === 'busy' ? 'bg-amber-400' : status === 'online' ? 'bg-green-400' : 'bg-gray-400'}`} />
+      <span className="pointer-events-none absolute right-2.5 top-2.5 flex items-center gap-1.5 rounded-full bg-black/55 px-2 py-0.5 text-[11px] font-semibold text-white backdrop-blur">
+        <span className="relative flex h-2 w-2">
+          {status !== 'offline' && <span className={`absolute inset-0 animate-ping rounded-full opacity-75 ${HOST_STATUS[status].dot}`} />}
+          <span className={`relative h-2 w-2 rounded-full ${HOST_STATUS[status].dot}`} />
+        </span>
+        {HOST_STATUS[status].label}
+      </span>
 
       <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 to-transparent p-3">
         <div className="flex items-center gap-1.5">

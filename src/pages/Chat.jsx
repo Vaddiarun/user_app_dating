@@ -221,8 +221,8 @@ function Conversation({ hostId, conversationId: initialConvId }) {
         </button>
         <div className="flex-1" />
         {/* Offline hosts can't take calls — messaging still works. */}
-        <button onClick={() => setCall(true)} disabled={statusKey === 'offline'} title={statusKey === 'offline' ? 'Host is offline — calls unavailable' : 'Voice call'} className="rounded-lg border border-line p-2 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent dark:hover:bg-white/5"><Phone size={16} /></button>
-        <button onClick={() => setCall(true)} disabled={statusKey === 'offline'} title={statusKey === 'offline' ? 'Host is offline — calls unavailable' : 'Video call'} className="rounded-lg bg-brand p-2 text-white disabled:cursor-not-allowed disabled:opacity-40"><Video size={16} /></button>
+        <button onClick={() => setCall(true)} disabled={status === 'offline'} title={status === 'offline' ? 'Host is offline — calls unavailable' : 'Voice call'} className="rounded-lg border border-line p-2 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent dark:hover:bg-white/5"><Phone size={16} /></button>
+        <button onClick={() => setCall(true)} disabled={status === 'offline'} title={status === 'offline' ? 'Host is offline — calls unavailable' : 'Video call'} className="rounded-lg bg-brand p-2 text-white disabled:cursor-not-allowed disabled:opacity-40"><Video size={16} /></button>
         <button onClick={() => setMenu(true)} className="rounded-lg border border-line p-2 hover:bg-gray-50 dark:hover:bg-white/5"><MoreVertical size={16} /></button>
       </div>
 

@@ -1,7 +1,6 @@
 import { useSyncExternalStore } from 'react'
 import { io } from 'socket.io-client'
 import { API_BASE_URL, getSession } from './api'
-import { hostStatusFrom } from './normalize'
 
 let socket = null
 
@@ -17,6 +16,16 @@ const presenceListeners = new Set()
 function setLivePresence(next) {
   livePresence = next
   presenceListeners.forEach((fn) => fn())
+}
+
+// Whether the realtime connection is currently up — live presence only flows while it is.
+let connected = false
+const connectionListeners = new Set()
+
+function setConnected(next) {
+  if (connected === next) return
+  connected = next
+  connectionListeners.forEach((fn) => fn())
 }
 
 function patchHostPresence(hostId, patch) {
@@ -37,9 +46,27 @@ export function connectSocket() {
   })
   // Attached here, once per socket, rather than from a screen's effect — presence has to be
   // tracked for the whole session, not just while one particular screen is mounted.
-  socket.on('connect', () => setLivePresence({}))
-  socket.on('presence:update', ({ hostId, isOnline }) => patchHostPresence(hostId, { online: isOnline }))
-  socket.on('host:busy', ({ hostId, isBusy }) => patchHostPresence(hostId, { busy: isBusy }))
+  socket.on('connect', () => {
+    if (import.meta.env.DEV) console.info('[socket] connected', socket.id)
+    setLivePresence({})
+    setConnected(true)
+  })
+  socket.on('disconnect', (reason) => {
+    if (import.meta.env.DEV) console.info('[socket] disconnected:', reason)
+    setConnected(false)
+  })
+  socket.on('connect_error', (err) => {
+    if (import.meta.env.DEV) console.warn('[socket] connect error:', err?.message)
+    setConnected(false)
+  })
+  socket.on('presence:update', ({ hostId, isOnline }) => {
+    if (import.meta.env.DEV) console.info('[socket] presence:update', { hostId, isOnline })
+    patchHostPresence(hostId, { online: isOnline })
+  })
+  socket.on('host:busy', ({ hostId, isBusy }) => {
+    if (import.meta.env.DEV) console.info('[socket] host:busy', { hostId, isBusy })
+    patchHostPresence(hostId, { busy: isBusy })
+  })
   return socket
 }
 
@@ -62,6 +89,16 @@ export function onSocketEvent(event, handler) {
   if (!s) return () => { }
   s.on(event, handler)
   return () => s.off(event, handler)
+}
+
+function subscribeConnection(fn) {
+  connectionListeners.add(fn)
+  return () => connectionListeners.delete(fn)
+}
+
+/** Whether the realtime socket is currently connected. */
+export function useSocketConnected() {
+  return useSyncExternalStore(subscribeConnection, () => connected)
 }
 
 function subscribePresence(fn) {

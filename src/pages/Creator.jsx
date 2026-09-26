@@ -142,8 +142,8 @@ export default function Creator() {
                 <Gift size={15} /> Gift
               </Button>
               {/* Offline hosts can't take calls — Chat above stays available. */}
-              <Button size="sm" className="py-2.5" onClick={() => setCall(true)} disabled={statusKey === 'offline'} title={statusKey === 'offline' ? 'Offline — send a message instead' : undefined}>
-                <Video size={15} /> {statusKey === 'offline' ? 'Offline' : 'Call'}
+              <Button size="sm" className="py-2.5" onClick={() => setCall(true)} disabled={status === 'offline'} title={status === 'offline' ? 'Offline — send a message instead' : undefined}>
+                <Video size={15} /> {status === 'offline' ? 'Offline' : 'Call'}
               </Button>
             </div>
 
