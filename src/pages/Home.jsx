@@ -7,6 +7,7 @@ import { hostsApi, meApi, ApiError } from '../lib/api'
 import { normalizeHostList } from '../lib/normalize'
 import { userName } from '../lib/format'
 import { useHostGallery } from '../lib/hostGallery'
+import { useHostOnline } from '../lib/socket'
 
 const TABS = ['All', 'New', 'Popular', 'Following']
 const CARD_G = [
@@ -42,10 +43,10 @@ export default function Home() {
       .catch((err) => alive && setError(err instanceof ApiError ? err.message : 'Could not load creators'))
       .finally(() => alive && setLoading(false))
 
-    // There's no realtime "host came online" push from the backend yet, so
-    // sitting on Home never otherwise learns about it. Poll quietly in the
-    // background (no skeleton/error flicker) so newly-online hosts and
-    // status changes show up without navigating away and back.
+    // Online/offline dots update live from `presence:update` (useHostOnline in
+    // CardMedia). This quiet background poll (no skeleton/error flicker) is
+    // still what picks up hosts that are new to the list, and resyncs status
+    // after any realtime events missed while the socket was down.
     const iv = setInterval(() => {
       fetchTab(tab).then((list) => alive && setHosts(list)).catch(() => {})
     }, 15000)
@@ -129,6 +130,7 @@ export function CreatorCard({ c, seed = 0, onCall }) {
 }
 
 function CardMedia({ c, from, to, seed }) {
+  const online = useHostOnline(c.id, c.online)
   const photos = useHostGallery(c.id)
   const [idx, setIdx] = useState(0)
   const scrollRef = useRef(null)
@@ -199,7 +201,7 @@ function CardMedia({ c, from, to, seed }) {
           <span className="h-1.5 w-1.5 rounded-full bg-white" /> Live
         </span>
       )}
-      <span className={`pointer-events-none absolute right-2.5 top-2.5 h-3 w-3 rounded-full border-2 border-white ${c.online ? 'bg-green-400' : 'bg-gray-400'}`} />
+      <span className={`pointer-events-none absolute right-2.5 top-2.5 h-3 w-3 rounded-full border-2 border-white ${online ? 'bg-green-400' : 'bg-gray-400'}`} />
 
       <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 to-transparent p-3">
         <div className="flex items-center gap-1.5">
