@@ -11,7 +11,7 @@ import { CallModal } from './Home'
 import { chatApi, hostsApi, giftsApi, ApiError } from '../lib/api'
 import { normalizeHost } from '../lib/normalize'
 import { useHostAvatarUrl } from '../lib/hostGallery'
-import { useHostOnline } from '../lib/socket'
+import { useHostStatus } from '../lib/socket'
 
 // Verified against the live backend: GET /chat/conversations returns
 // { conversations: [{ id, userId, hostId, lastMessageAt, createdAt, otherParticipant: { id, name, phone, role } }] }
@@ -119,7 +119,7 @@ function Conversation({ hostId, conversationId: initialConvId }) {
   const nav = useNavigate()
   const { state, actions, toast } = useApp()
   const [c, setC] = useState(null)
-  const online = useHostOnline(hostId, c?.online)
+  const status = useHostStatus(hostId, c)
   const [conversationId, setConversationId] = useState(initialConvId || null)
   const [messages, setMessages] = useState([])
   const [loading, setLoading] = useState(true)
@@ -217,7 +217,7 @@ function Conversation({ hostId, conversationId: initialConvId }) {
           <Avatar id={hostId} photoUrl={avatarUrl} size={38} ring ringColor="#e0a0a0" />
           <div className="text-left">
             <p className="text-[15px] font-semibold text-ink">{c?.name || '…'}</p>
-            <p className={`text-[12px] font-medium ${online ? 'text-green-600' : 'text-subtle'}`}>{online ? 'Online now' : 'Offline'}</p>
+            <p className={`text-[12px] font-medium ${status === 'busy' ? 'text-amber-600' : status === 'online' ? 'text-green-600' : 'text-subtle'}`}>{status === 'busy' ? 'In a call' : status === 'online' ? 'Online now' : 'Offline'}</p>
           </div>
         </button>
         <div className="flex-1" />

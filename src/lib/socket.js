@@ -4,17 +4,22 @@ import { API_BASE_URL, getSession } from './api'
 
 let socket = null
 
-// hostId -> isOnline, from the backend's `presence:update` broadcast (sent to every socket
-// whenever a host toggles online/offline or drops their connection). Screens fetch a host's
-// isOnline once; this overrides it live. Replaced (not mutated) on every change so it can be
-// a useSyncExternalStore snapshot. Cleared on (re)connect, since events sent while this
-// socket was down were missed — screens fall back to their fetched value until the next one.
+// hostId -> { online?, busy? }, from the backend's `presence:update` (host toggled online/offline
+// or dropped their connection) and `host:busy` (host's call was accepted / ended) broadcasts, both
+// sent to every socket. Screens fetch a host's isOnline/isBusy once; this overrides them live.
+// Replaced (not mutated) on every change so it can be a useSyncExternalStore snapshot. Cleared on
+// (re)connect, since events sent while this socket was down were missed — screens fall back to
+// their fetched values until the next one.
 let livePresence = {}
 const presenceListeners = new Set()
 
 function setLivePresence(next) {
   livePresence = next
   presenceListeners.forEach((fn) => fn())
+}
+
+function patchHostPresence(hostId, patch) {
+  setLivePresence({ ...livePresence, [hostId]: { ...livePresence[hostId], ...patch } })
 }
 
 /** Opens (or reuses) the realtime connection, authenticating with whatever access token is
@@ -32,9 +37,8 @@ export function connectSocket() {
   // Attached here, once per socket, rather than from a screen's effect — presence has to be
   // tracked for the whole session, not just while one particular screen is mounted.
   socket.on('connect', () => setLivePresence({}))
-  socket.on('presence:update', ({ hostId, isOnline }) => {
-    setLivePresence({ ...livePresence, [hostId]: isOnline })
-  })
+  socket.on('presence:update', ({ hostId, isOnline }) => patchHostPresence(hostId, { online: isOnline }))
+  socket.on('host:busy', ({ hostId, isBusy }) => patchHostPresence(hostId, { busy: isBusy }))
   return socket
 }
 
@@ -63,9 +67,14 @@ function subscribePresence(fn) {
   return () => presenceListeners.delete(fn)
 }
 
-/** A host's online status, kept live by `presence:update`. `fetchedOnline` is what the screen
- * got from the REST API (normalizeHost's `online`), used until a realtime update arrives. */
-export function useHostOnline(hostId, fetchedOnline) {
+/** A host's live status: 'busy' (in a call), 'online', or 'offline'. `host` is a normalizeHost
+ * result (or null while loading) — its fetched `online`/`busy` are used until a realtime update
+ * arrives. Busy wins over online/offline: a host in a call can't take another one either way. */
+export function useHostStatus(hostId, host) {
   const presence = useSyncExternalStore(subscribePresence, () => livePresence)
-  return presence[hostId] ?? fetchedOnline
+  const live = presence[hostId] || {}
+  const busy = live.busy ?? host?.busy ?? false
+  const online = live.online ?? host?.online ?? false
+  if (busy) return 'busy'
+  return online ? 'online' : 'offline'
 }

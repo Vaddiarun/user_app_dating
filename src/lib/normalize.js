@@ -32,6 +32,7 @@ export function normalizeHost(h) {
     hobbies: h.hobbies || [],
     sports: h.sports || [],
     online: h.isOnline ?? false,
+    busy: h.isBusy ?? false,
     // Neither "live" nor "verified" nor "category" exist on the host resource —
     // live status only exists per-broadcast (GET /live/broadcasts), and there's
     // no verification/category concept in this API. Left false/empty rather
