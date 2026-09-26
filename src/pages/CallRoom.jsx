@@ -711,21 +711,20 @@ export default function CallRoom() {
         })()}
 
         {giftRequest && phase === 'active' && (
-          <div className="absolute inset-x-4 top-3 z-[63] rounded-2xl bg-black/60 p-3 backdrop-blur">
-            <div className="flex items-center gap-2.5">
-              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-gold/20 text-gold"><HeartHandshake size={18} /></span>
-              <div className="min-w-0 flex-1">
-                <p className="text-[13px] font-semibold text-white">
-                  {c?.name || 'Host'} is requesting a gift
-                </p>
-                <p className="truncate text-[12px] text-white/60">
-                  {giftRequest.gift
-                    ? `${giftRequest.gift.name} · ₹${Math.round(giftRequest.gift.pricePaise / 100)}`
-                    : 'Choose a gift to send'}
-                </p>
-              </div>
+          <div className="absolute inset-0 z-[63] flex animate-fadeIn items-center justify-center bg-black/55 px-6 backdrop-blur-sm">
+          <div className="w-full max-w-[320px] animate-splashPop rounded-3xl bg-black/80 p-5 text-center shadow-2xl ring-1 ring-white/10 backdrop-blur">
+            <div className="flex flex-col items-center">
+              <span className="grid h-14 w-14 shrink-0 place-items-center rounded-full bg-gold/20 text-gold"><HeartHandshake size={26} /></span>
+              <p className="mt-3 text-[16px] font-bold text-white">
+                {c?.name || 'Host'} is requesting a gift
+              </p>
+              <p className="mt-1 text-[13px] text-white/60">
+                {giftRequest.gift
+                  ? `${giftRequest.gift.name} · ₹${Math.round(giftRequest.gift.pricePaise / 100)}`
+                  : 'Choose a gift to send'}
+              </p>
             </div>
-            <div className="mt-2.5 flex gap-2">
+            <div className="mt-4 flex gap-2">
               <button
                 onClick={() => {
                   if (giftRequest.gift) { acceptGiftRequest(giftRequest.gift); return }
@@ -745,6 +744,7 @@ export default function CallRoom() {
                 Not now
               </button>
             </div>
+          </div>
           </div>
         )}
 
