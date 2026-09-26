@@ -90,9 +90,8 @@ export default function Chat() {
               <button
                 key={cv.hostId}
                 onClick={() => nav(`/chat/${cv.hostId}`)}
-                className={`flex w-full items-center gap-3 px-4 py-3 text-left transition ${
-                  id === cv.hostId ? 'bg-brand-50 dark:bg-brand/15' : 'hover:bg-gray-50 dark:hover:bg-white/5'
-                }`}
+                className={`flex w-full items-center gap-3 px-4 py-3 text-left transition ${id === cv.hostId ? 'bg-brand-50 dark:bg-brand/15' : 'hover:bg-gray-50 dark:hover:bg-white/5'
+                  }`}
               >
                 <ConversationAvatar hostId={cv.hostId} size={42} />
                 <div className="min-w-0 flex-1">
@@ -119,8 +118,7 @@ function Conversation({ hostId, conversationId: initialConvId }) {
   const nav = useNavigate()
   const { state, actions, toast } = useApp()
   const [c, setC] = useState(null)
-  const statusKey = useHostStatus(hostId, c?.status)
-  const status = HOST_STATUS[statusKey]
+  const status = useHostStatus(hostId, c)
   const [conversationId, setConversationId] = useState(initialConvId || null)
   const [messages, setMessages] = useState([])
   const [loading, setLoading] = useState(true)
@@ -137,7 +135,7 @@ function Conversation({ hostId, conversationId: initialConvId }) {
 
   useEffect(() => {
     let alive = true
-    hostsApi.get(hostId).then((res) => alive && setC(normalizeHost(res))).catch(() => {})
+    hostsApi.get(hostId).then((res) => alive && setC(normalizeHost(res))).catch(() => { })
     return () => { alive = false }
   }, [hostId])
 
@@ -160,7 +158,7 @@ function Conversation({ hostId, conversationId: initialConvId }) {
         list.reverse()
         setMessages(list)
       })
-      .catch(() => {})
+      .catch(() => { })
       .finally(() => setLoading(false))
   }
 
@@ -188,7 +186,7 @@ function Conversation({ hostId, conversationId: initialConvId }) {
       if (!conversationId && cid) setConversationId(cid)
       setMessages((m) => [...m, { id: `local-${Date.now()}`, mine: true, text: t, ts: Date.now() }])
       loadMessages(cid)
-      actions.refreshWallet().catch(() => {}) // each message to a creator is paid
+      actions.refreshWallet().catch(() => { }) // each message to a creator is paid
     } catch (err) {
       // 402 = balance can't cover this creator's message price; the message wasn't sent.
       if (err instanceof ApiError && err.status === 402) {
@@ -218,10 +216,7 @@ function Conversation({ hostId, conversationId: initialConvId }) {
           <Avatar id={hostId} photoUrl={avatarUrl} size={38} ring ringColor="#e0a0a0" />
           <div className="text-left">
             <p className="text-[15px] font-semibold text-ink">{c?.name || '…'}</p>
-            <p className={`flex items-center gap-1 text-[12px] font-medium ${status.text}`}>
-              <span className={`h-1.5 w-1.5 rounded-full ${status.dot}`} />
-              {statusKey === 'online' ? 'Online now' : statusKey === 'busy' ? 'Busy · in a call' : 'Offline'}
-            </p>
+            <p className={`text-[12px] font-medium ${status === 'busy' ? 'text-amber-600' : status === 'online' ? 'text-green-600' : 'text-subtle'}`}>{status === 'busy' ? 'In a call' : status === 'online' ? 'Online now' : 'Offline'}</p>
           </div>
         </button>
         <div className="flex-1" />

@@ -5,12 +5,12 @@ import { hostStatusFrom } from './normalize'
 
 let socket = null
 
-// hostId -> 'online' | 'busy' | 'offline', from the backend's `presence:update` broadcast
-// (sent to every socket whenever a host toggles online/offline, goes into / out of a call,
-// or drops their connection). Screens fetch a host's status once; this overrides it live.
-// Replaced (not mutated) on every change so it can be a useSyncExternalStore snapshot.
-// Cleared on (re)connect, since events sent while this socket was down were missed —
-// screens fall back to their fetched value until the next one.
+// hostId -> { online?, busy? }, from the backend's `presence:update` (host toggled online/offline
+// or dropped their connection) and `host:busy` (host's call was accepted / ended) broadcasts, both
+// sent to every socket. Screens fetch a host's isOnline/isBusy once; this overrides them live.
+// Replaced (not mutated) on every change so it can be a useSyncExternalStore snapshot. Cleared on
+// (re)connect, since events sent while this socket was down were missed — screens fall back to
+// their fetched values until the next one.
 let livePresence = {}
 const presenceListeners = new Set()
 
@@ -19,14 +19,8 @@ function setLivePresence(next) {
   presenceListeners.forEach((fn) => fn())
 }
 
-// Whether the realtime connection is currently up — live presence only flows while it is.
-let connected = false
-const connectionListeners = new Set()
-
-function setConnected(next) {
-  if (connected === next) return
-  connected = next
-  connectionListeners.forEach((fn) => fn())
+function patchHostPresence(hostId, patch) {
+  setLivePresence({ ...livePresence, [hostId]: { ...livePresence[hostId], ...patch } })
 }
 
 /** Opens (or reuses) the realtime connection, authenticating with whatever access token is
@@ -43,25 +37,9 @@ export function connectSocket() {
   })
   // Attached here, once per socket, rather than from a screen's effect — presence has to be
   // tracked for the whole session, not just while one particular screen is mounted.
-  socket.on('connect', () => {
-    if (import.meta.env.DEV) console.info('[socket] connected', socket.id)
-    setLivePresence({})
-    setConnected(true)
-  })
-  socket.on('disconnect', (reason) => {
-    if (import.meta.env.DEV) console.info('[socket] disconnected:', reason)
-    setConnected(false)
-  })
-  socket.on('connect_error', (err) => {
-    if (import.meta.env.DEV) console.warn('[socket] connect error:', err?.message)
-    setConnected(false)
-  })
-  socket.on('presence:update', (payload) => {
-    if (import.meta.env.DEV) console.info('[socket] presence:update', payload)
-    const hostId = payload?.hostId
-    if (!hostId) return
-    setLivePresence({ ...livePresence, [hostId]: hostStatusFrom(payload) })
-  })
+  socket.on('connect', () => setLivePresence({}))
+  socket.on('presence:update', ({ hostId, isOnline }) => patchHostPresence(hostId, { online: isOnline }))
+  socket.on('host:busy', ({ hostId, isBusy }) => patchHostPresence(hostId, { busy: isBusy }))
   return socket
 }
 
@@ -81,7 +59,7 @@ export function getSocket() {
  * from an effect that retries until the socket exists (see CallRoom.jsx). */
 export function onSocketEvent(event, handler) {
   const s = getSocket()
-  if (!s) return () => {}
+  if (!s) return () => { }
   s.on(event, handler)
   return () => s.off(event, handler)
 }
@@ -91,20 +69,14 @@ function subscribePresence(fn) {
   return () => presenceListeners.delete(fn)
 }
 
-function subscribeConnection(fn) {
-  connectionListeners.add(fn)
-  return () => connectionListeners.delete(fn)
-}
-
-/** A host's status — 'online' | 'busy' | 'offline' — kept live by `presence:update`.
- * `fetchedStatus` is what the screen got from the REST API (normalizeHost's `status`), used
- * until a realtime update arrives. */
-export function useHostStatus(hostId, fetchedStatus) {
+/** A host's live status: 'busy' (in a call), 'online', or 'offline'. `host` is a normalizeHost
+ * result (or null while loading) — its fetched `online`/`busy` are used until a realtime update
+ * arrives. Busy wins over online/offline: a host in a call can't take another one either way. */
+export function useHostStatus(hostId, host) {
   const presence = useSyncExternalStore(subscribePresence, () => livePresence)
-  return presence[hostId] ?? fetchedStatus ?? 'offline'
-}
-
-/** Whether the realtime socket is currently connected. */
-export function useSocketConnected() {
-  return useSyncExternalStore(subscribeConnection, () => connected)
+  const live = presence[hostId] || {}
+  const busy = live.busy ?? host?.busy ?? false
+  const online = live.online ?? host?.online ?? false
+  if (busy) return 'busy'
+  return online ? 'online' : 'offline'
 }

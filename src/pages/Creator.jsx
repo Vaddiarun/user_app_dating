@@ -24,8 +24,7 @@ export default function Creator() {
   const nav = useNavigate()
   const { state, actions, toast } = useApp()
   const [c, setC] = useState(null)
-  const statusKey = useHostStatus(id, c?.status)
-  const status = HOST_STATUS[statusKey]
+  const status = useHostStatus(id, c)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [tab, setTab] = useState('Details')
@@ -63,7 +62,7 @@ export default function Creator() {
         }))
         setGalleryItems(items)
       })
-      .catch(() => {})
+      .catch(() => { })
     return () => { alive = false }
   }, [id])
 
@@ -112,7 +111,7 @@ export default function Creator() {
         <div className="lg:sticky lg:top-20 lg:self-start">
           <Card className="p-5">
             <div className="flex items-start gap-4">
-              <Avatar id={c.id} photoUrl={avatarUrl} size={72} ring ringColor={status.ring} />
+              <Avatar id={c.id} photoUrl={avatarUrl} size={72} ring ringColor={status === 'busy' ? '#f59e0b' : status === 'online' ? '#2fb37a' : '#c9c9d2'} />
               <div className="min-w-0 pt-1">
                 <div className="flex items-center gap-1.5">
                   <span className="text-[19px] font-bold text-ink">{c.name}</span>
@@ -120,8 +119,8 @@ export default function Creator() {
                 </div>
                 <p className="text-[13px] text-subtle">{c.languages?.join(', ')}{c.age ? ` · ${c.age} yrs` : ''}</p>
                 <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px]">
-                  <span className={`flex items-center gap-1 font-medium ${status.text}`}>
-                    <span className={`h-2 w-2 rounded-full ${status.dot}`} /> {status.label}
+                  <span className={`flex items-center gap-1 font-medium ${status === 'busy' ? 'text-amber-600' : status === 'online' ? 'text-green-600' : 'text-subtle'}`}>
+                    <span className={`h-2 w-2 rounded-full ${status === 'busy' ? 'bg-amber-500' : status === 'online' ? 'bg-green-500' : 'bg-gray-400'}`} /> {status === 'busy' ? 'Busy · in a call' : status === 'online' ? 'Online' : 'Offline'}
                   </span>
                   {c.live && <span className="font-medium text-rose-500">● Live now</span>}
                   <span className="text-subtle">{compact(c.followerCount)} followers</span>

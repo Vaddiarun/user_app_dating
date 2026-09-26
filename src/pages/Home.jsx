@@ -7,7 +7,7 @@ import { hostsApi, meApi, ApiError } from '../lib/api'
 import { normalizeHostList } from '../lib/normalize'
 import { userName } from '../lib/format'
 import { useHostGallery } from '../lib/hostGallery'
-import { useHostStatus, useSocketConnected } from '../lib/socket'
+import { useHostStatus } from '../lib/socket'
 
 const TABS = ['All', 'New', 'Popular', 'Following']
 const CARD_G = [
@@ -43,12 +43,12 @@ export default function Home() {
       .catch((err) => alive && setError(err instanceof ApiError ? err.message : 'Could not load creators'))
       .finally(() => alive && setLoading(false))
 
-    // Online/busy/offline dots update live from `presence:update` (useHostStatus in
+    // Online/busy/offline dots update live from `presence:update` + `host:busy` (useHostStatus in
     // CardMedia). This quiet background poll (no skeleton/error flicker) is
     // still what picks up hosts that are new to the list, and resyncs status
     // after any realtime events missed while the socket was down.
     const iv = setInterval(() => {
-      fetchTab(tab).then((list) => alive && setHosts(list)).catch(() => {})
+      fetchTab(tab).then((list) => alive && setHosts(list)).catch(() => { })
     }, 15000)
 
     return () => { alive = false; clearInterval(iv) }
@@ -60,7 +60,7 @@ export default function Home() {
   useEffect(() => {
     if (!socketConnected) return
     let alive = true
-    fetchTab(tab).then((list) => alive && setHosts(list)).catch(() => {})
+    fetchTab(tab).then((list) => alive && setHosts(list)).catch(() => { })
     return () => { alive = false }
   }, [socketConnected]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -134,30 +134,30 @@ export function CreatorCard({ c, seed = 0, onCall }) {
           <MessageSquare size={15} /> Message
         </button>
       ) : (
-      /* Voice and video side by side — the tap starts that call type directly. */
-      <div className="mt-2 flex gap-2">
-        <button
-          onClick={() => onCall('voice')}
-          title={`Voice call · ₹${Math.round((c.voiceRatePaise || c.ratePaise || 0) / 100)}/min`}
-          className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-brand/40 bg-brand/10 py-2 text-[13px] font-semibold text-brand opacity-90 transition hover:bg-brand/20 group-hover:opacity-100"
-        >
-          <Phone size={15} /> Call
-        </button>
-        <button
-          onClick={() => onCall('video')}
-          title={`Video call · ₹${Math.round((c.ratePaise || 0) / 100)}/min`}
-          className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-brand py-2 text-[13px] font-semibold text-white opacity-90 transition group-hover:opacity-100"
-        >
-          <Video size={15} /> Video
-        </button>
-      </div>
+        /* Voice and video side by side — the tap starts that call type directly. */
+        <div className="mt-2 flex gap-2">
+          <button
+            onClick={() => onCall('voice')}
+            title={`Voice call · ₹${Math.round((c.voiceRatePaise || c.ratePaise || 0) / 100)}/min`}
+            className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-brand/40 bg-brand/10 py-2 text-[13px] font-semibold text-brand opacity-90 transition hover:bg-brand/20 group-hover:opacity-100"
+          >
+            <Phone size={15} /> Call
+          </button>
+          <button
+            onClick={() => onCall('video')}
+            title={`Video call · ₹${Math.round((c.ratePaise || 0) / 100)}/min`}
+            className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-brand py-2 text-[13px] font-semibold text-white opacity-90 transition group-hover:opacity-100"
+          >
+            <Video size={15} /> Video
+          </button>
+        </div>
       )}
     </div>
   )
 }
 
 function CardMedia({ c, from, to, seed }) {
-  const status = HOST_STATUS[useHostStatus(c.id, c.status)]
+  const status = useHostStatus(c.id, c)
   const photos = useHostGallery(c.id)
   const [idx, setIdx] = useState(0)
   const scrollRef = useRef(null)
@@ -228,13 +228,7 @@ function CardMedia({ c, from, to, seed }) {
           <span className="h-1.5 w-1.5 rounded-full bg-white" /> Live
         </span>
       )}
-      <span className="pointer-events-none absolute right-2.5 top-2.5 flex items-center gap-1.5 rounded-full bg-black/55 px-2 py-0.5 text-[11px] font-semibold text-white backdrop-blur">
-        <span className="relative flex h-2 w-2">
-          {status.label !== 'Offline' && <span className={`absolute inset-0 animate-ping rounded-full opacity-75 ${status.dot}`} />}
-          <span className={`relative h-2 w-2 rounded-full ${status.dot}`} />
-        </span>
-        {status.label}
-      </span>
+      <span className={`pointer-events-none absolute right-2.5 top-2.5 h-3 w-3 rounded-full border-2 border-white ${status === 'busy' ? 'bg-amber-400' : status === 'online' ? 'bg-green-400' : 'bg-gray-400'}`} />
 
       <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 to-transparent p-3">
         <div className="flex items-center gap-1.5">
