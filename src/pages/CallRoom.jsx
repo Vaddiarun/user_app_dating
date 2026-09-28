@@ -95,7 +95,6 @@ export default function CallRoom() {
   const [error, setError] = useState('')
   const [errorKind, setErrorKind] = useState('generic') // 'balance' | 'generic'
   const [seconds, setSeconds] = useState(0)
-  const [ringSeconds, setRingSeconds] = useState(0)
   const [muted, setMuted] = useState(false)
   const [showChat, setShowChat] = useState(false)
   const [showEmoji, setShowEmoji] = useState(false)
@@ -341,13 +340,6 @@ export default function CallRoom() {
     return () => clearInterval(iv)
   }, [phase])
 
-  // ring-duration ticker — purely cosmetic, but reassures the caller the app
-  // is actually still doing something rather than looking frozen while ringing
-  useEffect(() => {
-    if (phase !== 'connecting') { setRingSeconds(0); return }
-    const iv = setInterval(() => setRingSeconds((s) => s + 1), 1000)
-    return () => clearInterval(iv)
-  }, [phase])
 
   // ringback tone while waiting for the host to accept
   useEffect(() => {
@@ -676,16 +668,19 @@ export default function CallRoom() {
     >
       {/* top bar — floats over the video on a soft dark fade (edge-to-edge video, no solid strip) */}
       <div className="absolute inset-x-0 top-0 z-30 flex items-center gap-3 bg-gradient-to-b from-black/70 via-black/35 to-transparent px-4 pb-10 pt-4">
+        {/* While ringing, the centre stage already shows the host's avatar + name — only repeat them up here once connected. */}
+        {phase === 'active' ? (<>
         <Avatar id={hostId} size={40} />
         <div className="min-w-0 flex-1">
           <p className="truncate text-[16px] font-semibold drop-shadow">{c?.name || '…'}</p>
           <p className="flex items-center gap-1.5 text-[12px] text-white/75">
-            {phase === 'active' ? <><span className="h-1.5 w-1.5 rounded-full bg-emerald-400" /> {clock(seconds)}</> : 'Calling…'}
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" /> {clock(seconds)}
             {phase === 'active' && remoteSeen && remoteMuted && (
               <span className="inline-flex items-center gap-1 rounded-full bg-rose-500/80 px-1.5 py-px text-[10.5px] font-semibold text-white"><MicOff size={10} /> Muted</span>
             )}
           </p>
         </div>
+        </>) : <div className="flex-1" />}
         {call?.ratePaise ? (
           <span className="shrink-0 rounded-full border border-gold/40 bg-black/35 px-3 py-1.5 text-[13px] font-semibold text-gold backdrop-blur-md">
             ₹{(call.ratePaise / 100).toFixed(0)}/min
@@ -856,7 +851,6 @@ export default function CallRoom() {
                 <span className="animate-dotBlink [animation-delay:0.4s]">.</span>
               </span>
             </p>
-            {ringSeconds > 0 && <p className="mt-1 text-[12px] text-white/40">{clock(ringSeconds)}</p>}
           </div>
         )}
 
@@ -962,8 +956,11 @@ export default function CallRoom() {
         {mode === 'video' && (
           <Ctrl onClick={() => setCamOn((v) => !v)} active={!camOn} label={camOn ? 'Stop video' : 'Start video'}>{camOn ? <Video size={20} /> : <VideoOff size={20} />}</Ctrl>
         )}
+        {/* Chat and gifts need a connected host — hidden while it's still ringing. */}
+        {phase === 'active' && <>
         <Ctrl onClick={() => setShowChat((s) => !s)} active={showChat} label="Chat" badge={unread}><MessageSquare size={20} /></Ctrl>
         <Ctrl onClick={() => setGift(true)} label="Send gift"><Gift size={20} /></Ctrl>
+        </>}
         <button onClick={requestEnd} className="flex w-[64px] flex-col items-center gap-1.5">
           <span className="grid h-14 w-14 place-items-center rounded-full bg-rose-500 text-white shadow-lg shadow-rose-500/40 active:scale-95"><PhoneOff size={22} /></span>
           <span className="text-[11px] font-medium text-white/85">End</span>
