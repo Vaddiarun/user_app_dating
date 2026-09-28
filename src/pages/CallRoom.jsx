@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
   Mic, MicOff, MessageSquare, Gift, PhoneOff, X, AlertTriangle, Wallet, RotateCw, SwitchCamera, HeartHandshake, Send, Smile,
+  Video, VideoOff,
 } from 'lucide-react'
 import { useApp } from '../store/AppStore'
 import { Avatar, Button } from '../components/ui'
@@ -28,20 +29,26 @@ const COMMENT_FADE_MS = 1200
  * video, kept legible with a text shadow. Callers should filter `messages` to
  * the last few within COMMENT_LIFETIME_MS and re-render periodically (the call's
  * own elapsed-time ticker already does this every second) to advance the fade. */
-function FloatingComments({ messages, className = '' }) {
+function FloatingComments({ items, fadeOut = true, scrollable = false, scrollRef, className = '' }) {
   const now = Date.now()
-  const mask = 'linear-gradient(to bottom, transparent, #000 30%)'
+  const mask = 'linear-gradient(to bottom, transparent, #000 22%)'
   return (
-    <div className={`overflow-hidden ${className}`} style={{ maskImage: mask, WebkitMaskImage: mask }}>
-      <div className="flex min-h-full flex-col justify-end gap-1.5">
-        {messages.map((m, i) => {
-          const age = now - m.at
-          const fading = age > COMMENT_LIFETIME_MS - COMMENT_FADE_MS
+    // Instagram-live style, same as the host app: small avatar + name + message floating straight
+    // over the video (a soft text shadow keeps it readable), no box behind it. Newest at the bottom;
+    // the oldest fades into the video at the top. Closed chat: each also dissolves on its own.
+    <div ref={scrollRef} className={`${scrollable ? 'thin-scroll overflow-y-auto' : 'overflow-hidden'} ${className}`} style={{ maskImage: mask, WebkitMaskImage: mask }}>
+      <div className="flex min-h-full flex-col justify-end gap-2.5">
+        {items.map((m, i) => {
+          const fading = fadeOut && now - m.at > COMMENT_LIFETIME_MS - COMMENT_FADE_MS
           return (
             <div key={m.id ?? i} className="transition-opacity" style={{ opacity: fading ? 0 : 1, transitionDuration: `${COMMENT_FADE_MS}ms` }}>
-              <p className="max-w-[90%] text-[13px] leading-snug text-white" style={{ textShadow: '0 1px 3px rgba(0,0,0,.75)' }}>
-                {m.content}
-              </p>
+              <div className="flex max-w-[88%] animate-fadeIn items-start gap-2">
+                <Avatar id={m.avatarId} size={26} className="mt-0.5 shrink-0 rounded-full ring-1 ring-white/30" />
+                <p className="text-[13.5px] leading-snug text-white" style={{ textShadow: '0 1px 3px rgba(0,0,0,.8)' }}>
+                  <span className="block text-[12px] font-bold text-white/85">{m.name}</span>
+                  {m.text}
+                </p>
+              </div>
             </div>
           )
         })}
@@ -56,6 +63,24 @@ const EMOJIS = [
   '💕', '💖', '💋', '🎉', '✨', '🌹', '🎁', '😴', '😢', '😱', '🥳', '😌',
   '🤍', '💔', '🤝', '👀', '😋', '🤤', '😳', '🥺', '😤', '😆', '🫶', '💃',
 ]
+
+/** Height of the on-screen keyboard (0 when closed). Most mobile browsers overlay the keyboard
+ * on the page without shrinking the layout, so a bottom-anchored chat box ends up behind it —
+ * this reads the visual viewport so the box can sit just above the keyboard instead. `vh` is the
+ * height actually visible above it. */
+function useKeyboardInset() {
+  const [kb, setKb] = useState({ inset: 0, vh: typeof window !== 'undefined' ? window.innerHeight : 0 })
+  useEffect(() => {
+    const vv = window.visualViewport
+    if (!vv) return
+    const update = () => setKb({ inset: Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop)), vh: Math.round(vv.height) })
+    vv.addEventListener('resize', update)
+    vv.addEventListener('scroll', update)
+    update()
+    return () => { vv.removeEventListener('resize', update); vv.removeEventListener('scroll', update) }
+  }, [])
+  return kb
+}
 
 export default function CallRoom() {
   const { id: hostId } = useParams()
@@ -81,7 +106,15 @@ export default function CallRoom() {
   const [chatErr, setChatErr] = useState('')
   const [rtcErr, setRtcErr] = useState('') // fatal — mic/join never came up, call has no audio at all
   const [camErr, setCamErr] = useState('') // non-fatal — camera specifically failed, audio still works
-  const [remoteJoined, setRemoteJoined] = useState(false)
+  const [remoteJoined, setRemoteJoined] = useState(false) // host's video is on right now
+  const [remoteSeen, setRemoteSeen] = useState(false) // host has connected at least once
+  const [remoteMuted, setRemoteMuted] = useState(false)
+  const [remoteStream, setRemoteStream] = useState(null) // same host video, for the blurred backdrop
+  const [camOn, setCamOn] = useState(true)
+  const [unread, setUnread] = useState(0) // host messages that arrived while the chat was closed
+  const showChatRef = useRef(false)
+  const kb = useKeyboardInset()
+  const [confirmEnd, setConfirmEnd] = useState(false)
   const [swapped, setSwapped] = useState(false) // which video is full-screen vs the small PIP tile
   const [cameras, setCameras] = useState([])
   const [facing, setFacing] = useState('user')
@@ -103,6 +136,7 @@ export default function CallRoom() {
   callRef.current = call
   const sessionRef = useRef(null)
   const remoteVideoRef = useRef(null)
+  const remoteBgRef = useRef(null)
   const localVideoRef = useRef(null)
   const stageRef = useRef(null)
   const pipRef = useRef(null)
@@ -268,6 +302,7 @@ export default function CallRoom() {
       unsubs.push(onSocketEvent('chat:message', (m) => {
         if (m?.senderId !== hostId) return
         setChatLog((l) => [...l, { id: m.messageId, senderId: m.senderId, content: m.content, at: Date.now() }])
+        if (!showChatRef.current) setUnread((n) => n + 1)
       }))
     }
     attach()
@@ -348,15 +383,26 @@ export default function CallRoom() {
         // anything but 'video', so the caller's subscribed audio track was
         // never actually started. Subscribing alone doesn't play it; the
         // SDK requires an explicit .play() call, same as video.
+        // Unpublishing is how the host turning their camera off / muting reaches us — show
+        // their avatar + a muted badge rather than a frozen last frame.
         if (left) {
-          if (mediaType === 'video') setRemoteJoined(false)
+          if (mediaType === 'video') { setRemoteJoined(false); setRemoteStream(null) }
+          if (mediaType === 'audio') setRemoteMuted(true)
           return
         }
         if (mediaType === 'video') {
-          user.videoTrack?.play(remoteVideoRef.current)
+          // `contain`: a wide 16:9 picture in a tall screen lost about half its width to
+          // cropping (faces looked zoomed in). The full picture is shown, with a blurred copy of
+          // the same video filling the space around it.
+          user.videoTrack?.play(remoteVideoRef.current, { fit: 'contain' })
+          const mst = user.videoTrack?.getMediaStreamTrack?.()
+          setRemoteStream(mst ? new MediaStream([mst]) : null)
           setRemoteJoined(true)
+          setRemoteSeen(true)
         } else if (mediaType === 'audio') {
           user.audioTrack?.play()
+          setRemoteMuted(false)
+          setRemoteSeen(true)
         }
       },
     })
@@ -364,7 +410,7 @@ export default function CallRoom() {
         if (cancelled) { leaveChannel(session); return }
         sessionRef.current = session
         if (session.localVideoTrack) {
-          session.localVideoTrack.play(localVideoRef.current, PLAY_CONFIG)
+          session.localVideoTrack.play(localVideoRef.current, { ...PLAY_CONFIG, mirror: true })
         } else if (session.videoError && mode === 'video') {
           // Audio still published fine (see lib/agora.js) — only the camera failed.
           setCamErr("Camera unavailable — check permissions or close other apps using it.")
@@ -386,6 +432,15 @@ export default function CallRoom() {
   }, [phase, call?.channelName, call?.agoraToken]) // eslint-disable-line
 
   useEffect(() => { sessionRef.current?.localAudioTrack?.setEnabled(!muted) }, [muted])
+  useEffect(() => { sessionRef.current?.localVideoTrack?.setEnabled(camOn) }, [camOn])
+  useEffect(() => { showChatRef.current = showChat; if (showChat) setUnread(0) }, [showChat])
+
+  useEffect(() => {
+    const el = remoteBgRef.current
+    if (!el) return
+    el.srcObject = remoteStream
+    if (remoteStream) el.play().catch(() => {})
+  }, [remoteStream])
 
   // Without this, new messages append at the bottom of the DOM but the
   // scrolled view stays wherever it was — usually the top, showing old
@@ -414,7 +469,9 @@ export default function CallRoom() {
       const next = facing === 'user' ? 'environment' : 'user'
       const newTrack = await switchCameraFacing(session.client, session.localVideoTrack, next)
       session.localVideoTrack = newTrack
-      newTrack.play(localVideoRef.current, PLAY_CONFIG)
+      if (!camOn) newTrack.setEnabled(false)
+      // mirror only the front camera's self-view, like every call app
+      newTrack.play(localVideoRef.current, { ...PLAY_CONFIG, mirror: next === 'user' })
       setFacing(next)
     } catch {
       toast('Could not switch camera', { tone: 'error' })
@@ -439,8 +496,10 @@ export default function CallRoom() {
     const stageRect = stage.getBoundingClientRect()
     const pipRect = pip.getBoundingClientRect()
     const maxX = Math.max(DRAG_MARGIN, stageRect.width - pipRect.width - DRAG_MARGIN)
-    const maxY = Math.max(DRAG_MARGIN, stageRect.height - pipRect.height - DRAG_MARGIN)
-    return { x: Math.min(Math.max(x, DRAG_MARGIN), maxX), y: Math.min(Math.max(y, DRAG_MARGIN), maxY) }
+    // keep clear of the floating header (top) and control bar (bottom)
+    const minY = 88
+    const maxY = Math.max(minY, stageRect.height - pipRect.height - 160)
+    return { x: Math.min(Math.max(x, DRAG_MARGIN), maxX), y: Math.min(Math.max(y, minY), maxY) }
   }
 
   const onPipPointerDown = (e) => {
@@ -605,6 +664,9 @@ export default function CallRoom() {
   }
 
   const lowBalance = phase === 'active' && remainingSec < 120
+  // Hanging up by accident mid-call is easy — confirm first. While it's still ringing, nothing
+  // is billed yet, so cancelling stays one tap.
+  const requestEnd = () => (phase === 'active' ? setConfirmEnd(true) : finish('user'))
 
   return (
     <div
@@ -612,25 +674,28 @@ export default function CallRoom() {
       style={{ background: 'linear-gradient(180deg,#3a2568 0%,#1a1236 45%,#0b0814 100%)' }}
       onContextMenu={(e) => e.preventDefault()}
     >
-      {/* top bar */}
-      <div className="flex items-center justify-between px-4 pt-4">
-        <div className="flex items-center gap-2 rounded-full bg-black/35 px-3 py-1.5">
-          <Avatar id={hostId} size={22} />
-          <span className="text-[13px] font-semibold">{c?.name || '…'}</span>
-          {phase === 'active' && <span className="text-[12px] text-white/70">⏱ {clock(seconds)}</span>}
+      {/* top bar — floats over the video on a soft dark fade (edge-to-edge video, no solid strip) */}
+      <div className="absolute inset-x-0 top-0 z-30 flex items-center gap-3 bg-gradient-to-b from-black/70 via-black/35 to-transparent px-4 pb-10 pt-4">
+        <Avatar id={hostId} size={40} />
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-[16px] font-semibold drop-shadow">{c?.name || '…'}</p>
+          <p className="flex items-center gap-1.5 text-[12px] text-white/75">
+            {phase === 'active' ? <><span className="h-1.5 w-1.5 rounded-full bg-emerald-400" /> {clock(seconds)}</> : 'Calling…'}
+            {phase === 'active' && remoteSeen && remoteMuted && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-rose-500/80 px-1.5 py-px text-[10.5px] font-semibold text-white"><MicOff size={10} /> Muted</span>
+            )}
+          </p>
         </div>
-        <div className="flex items-center gap-2">
-          {call?.ratePaise ? (
-            <span className="rounded-full border border-gold/40 bg-black/35 px-3 py-1.5 text-[13px] font-semibold text-gold">
-              ₹{(call.ratePaise / 100).toFixed(0)}/min
-            </span>
-          ) : null}
-          <button onClick={() => finish('user')} className="grid h-8 w-8 place-items-center rounded-full bg-black/35"><X size={16} /></button>
-        </div>
+        {call?.ratePaise ? (
+          <span className="shrink-0 rounded-full border border-gold/40 bg-black/35 px-3 py-1.5 text-[13px] font-semibold text-gold backdrop-blur-md">
+            ₹{(call.ratePaise / 100).toFixed(0)}/min
+          </span>
+        ) : null}
+        <button onClick={requestEnd} className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-black/35 backdrop-blur-md" aria-label="End call"><X size={16} /></button>
       </div>
 
-      {/* stage */}
-      <div ref={stageRef} className="relative flex flex-1 items-center justify-center">
+      {/* stage — fills the whole screen; header and controls float above it */}
+      <div ref={stageRef} className="absolute inset-0 flex items-center justify-center">
         {phase === 'active' && <Watermark user={state.user} sessionId={call?.callId} secure layers={2} />}
         {mode === 'video' && phase === 'active' && (() => {
           // Whichever slot is the small PIP always gets z-10 — both boxes are
@@ -638,7 +703,7 @@ export default function CallRoom() {
           // own, so without it the one painted later would sit on top and
           // hide the other regardless of which one is visually meant to be on top.
           const fullClass = 'absolute inset-0'
-          const pipClass = 'absolute right-4 top-4 z-10 h-36 w-28 overflow-hidden rounded-2xl'
+          const pipClass = 'absolute right-4 top-24 z-10 h-36 w-28 overflow-hidden rounded-2xl ring-1 ring-white/20 shadow-xl shadow-black/40'
           // The PIP tile is freely draggable (WhatsApp-style) regardless of
           // which video currently occupies it after a swap — these handlers
           // and the drag-offset style apply to whichever box gets `pipClass`
@@ -661,13 +726,22 @@ export default function CallRoom() {
                 className={swapped ? pipClass : fullClass}
                 style={swapped ? pipDragStyle : undefined}
               >
-                <div ref={remoteVideoRef} className="absolute inset-0" />
+                {/* blurred copy of the same video fills the space around the full (uncropped) picture */}
+                <video ref={remoteBgRef} autoPlay muted playsInline aria-hidden className={`absolute inset-0 h-full w-full scale-110 object-cover blur-2xl brightness-75 transition-opacity ${remoteJoined ? 'opacity-100' : 'opacity-0'}`} />
+                <div ref={remoteVideoRef} className="agora-video-contain absolute inset-0" />
                 {!remoteJoined && (
                   <div className="absolute inset-0 grid place-items-center">
-                    {rtcErr ? (
+                    {rtcErr && !remoteSeen ? (
                       <p className="max-w-[240px] px-8 text-center text-[13px] text-white/60">{rtcErr}</p>
                     ) : (
-                      <div className={swapped ? 'h-16 w-16 rounded-full bg-white/5' : 'h-64 w-64 rounded-full bg-white/5'} />
+                      <div className="flex flex-col items-center text-center">
+                        <Avatar id={hostId} size={swapped ? 52 : 120} />
+                        {!swapped && (
+                          <p className="mt-4 flex items-center gap-1.5 text-[13px] text-white/70">
+                            {remoteSeen ? <><VideoOff size={14} /> {c?.name || 'The host'} turned their camera off</> : 'Connecting video…'}
+                          </p>
+                        )}
+                      </div>
                     )}
                   </div>
                 )}
@@ -682,6 +756,11 @@ export default function CallRoom() {
                 }}
               >
                 <div ref={localVideoRef} className="absolute inset-0" />
+                {!camOn && !(rtcErr || camErr) && (
+                  <div className="absolute inset-0 grid place-items-center bg-[#1a1236]/90 text-white/70">
+                    <span className="flex flex-col items-center gap-1 text-[11px]"><VideoOff size={swapped ? 28 : 18} />{swapped && 'Your camera is off'}</span>
+                  </div>
+                )}
                 {/* This is the one place that's always about *your own* outgoing
                     media specifically — it has to stay visible regardless of
                     whether the host's video has come through. */}
@@ -698,7 +777,7 @@ export default function CallRoom() {
                     disabled={flipping}
                     className={
                       swapped
-                        ? 'absolute bottom-20 right-4 grid h-11 w-11 place-items-center rounded-full bg-black/45 text-white disabled:opacity-50'
+                        ? 'absolute bottom-40 right-4 grid h-11 w-11 place-items-center rounded-full bg-black/45 text-white disabled:opacity-50'
                         : 'absolute bottom-1 right-1 grid h-6 w-6 place-items-center rounded-full bg-black/50 text-white disabled:opacity-50'
                     }
                   >
@@ -795,29 +874,35 @@ export default function CallRoom() {
             call's own elapsed-time ticker, which is what advances the fade-out. */}
         {!showChat && phase === 'active' && (
           <FloatingComments
-            messages={chatLog.filter((m) => m.senderId === hostId && m.at && Date.now() - m.at < COMMENT_LIFETIME_MS).slice(-4)}
-            className="pointer-events-none absolute bottom-4 left-4 right-4 sm:right-auto sm:w-80 max-h-[28vh]"
+            items={chatLog.filter((m) => m.senderId === hostId && m.at && Date.now() - m.at < COMMENT_LIFETIME_MS).slice(-4)
+              .map((m) => ({ id: m.id, at: m.at, text: m.content, name: c?.name || 'Host', avatarId: hostId }))}
+            className={`pointer-events-none absolute left-4 right-4 z-40 h-[30vh] sm:right-auto sm:w-80 ${lowBalance ? 'bottom-60' : 'bottom-44'}`}
           />
         )}
 
         {showChat && phase === 'active' && (
-          <div className="absolute bottom-4 left-4 right-4 sm:right-auto sm:w-80 rounded-2xl flex flex-col">
-            {/* max-h-40 (160px) is a flat cap that's fine in portrait but eats
-                over half the screen in landscape/short viewports, where it
-                visibly covers the host's video — clamp it to the viewport's
-                own height instead so it always leaves the video mostly clear. */}
-            <div ref={chatFeedRef} className="thin-scroll max-h-[28vh] min-h-0 space-y-1.5 overflow-y-auto p-3 text-[13px]">
-              {chatLog.length === 0 && <p className="text-white/50">Messages during this call show up here.</p>}
-              {chatLog.map((m, i) => (
-                <p key={m.id ?? i} className={m.senderId && m.senderId === hostId ? 'text-left' : 'text-right'}>
-                  <span className={`inline-block rounded-xl px-2.5 py-1 text-white ${m.senderId && m.senderId === hostId ? 'bg-white/15' : 'bg-brand'}`}>
-                    {m.content ?? m.text}
-                  </span>
-                </p>
-              ))}
-            </div>
-            {chatErr && <p className="px-3 pb-1 text-[11px] text-rose-300">{chatErr}</p>}
-            <div className="flex items-center gap-2 p-2.5 pt-0">
+          // No panel — the conversation floats over the video (like the host app / Instagram live),
+          // with just a soft dark fade at the bottom so the text stays readable.
+          <div
+            className="absolute inset-x-0 z-40 flex flex-col bg-gradient-to-t from-black/85 via-black/45 to-transparent pt-16 transition-[bottom] duration-150"
+            style={{ bottom: kb.inset, maxHeight: Math.round((kb.inset ? kb.vh * 0.62 : kb.vh * 0.5) || 360) }}
+          >
+            {chatLog.length === 0
+              ? <p className="px-4 pb-2 text-[12.5px] text-white/75" style={{ textShadow: '0 1px 3px rgba(0,0,0,.8)' }}>No messages yet — say hello!</p>
+              : (
+                <FloatingComments
+                  scrollable
+                  fadeOut={false}
+                  scrollRef={chatFeedRef}
+                  className="min-h-0 flex-1 px-4"
+                  items={chatLog.map((m, i) => {
+                    const fromHost = m.senderId && m.senderId === hostId
+                    return { id: m.id ?? `local-${i}`, at: m.at || 0, text: m.content ?? m.text, name: fromHost ? (c?.name || 'Host') : 'You', avatarId: fromHost ? hostId : 'me' }
+                  })}
+                />
+              )}
+            {chatErr && <p className="px-4 pt-1 text-[11px] text-rose-300">{chatErr}</p>}
+            <div className="flex items-center gap-2 px-3 pb-4 pt-2">
               <div className="relative shrink-0">
                 {showEmoji && (
                   <div className="thin-scroll absolute bottom-11 left-0 z-10 grid max-h-48 w-56 grid-cols-7 gap-1 overflow-y-auto rounded-2xl bg-black/80 p-2 backdrop-blur">
@@ -836,7 +921,7 @@ export default function CallRoom() {
                 <button
                   type="button"
                   onClick={() => setShowEmoji((s) => !s)}
-                  className={`grid h-9 w-9 place-items-center rounded-full text-white ${showEmoji ? 'bg-white/25' : 'bg-white/10'}`}
+                  className={`grid h-10 w-10 place-items-center rounded-full text-white backdrop-blur-sm ${showEmoji ? 'bg-white text-ink' : 'bg-white/15'}`}
                 >
                   <Smile size={16} />
                 </button>
@@ -846,19 +931,24 @@ export default function CallRoom() {
                 onChange={(e) => setChatText(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && sendChatMessage()}
                 placeholder="Message…"
-                className="flex-1 rounded-full bg-white/10 text-white placeholder-white/40 px-3.5 py-2 text-[13px] outline-none"
+                className="min-w-0 flex-1 rounded-full border border-white/20 bg-white/15 px-4 py-2.5 text-[14px] text-white placeholder-white/60 outline-none backdrop-blur-sm"
               />
-              <button onClick={sendChatMessage} disabled={chatSending || !chatText.trim()} className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-brand text-ink disabled:opacity-50">
+              <button onClick={sendChatMessage} disabled={chatSending || !chatText.trim()} className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-brand text-ink disabled:opacity-50">
                 <Send size={16} />
+              </button>
+              <button onClick={() => { setShowChat(false); setShowEmoji(false) }} className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-white/15 text-white backdrop-blur-sm" aria-label="Close chat">
+                <X size={16} />
               </button>
             </div>
           </div>
         )}
       </div>
 
+      {/* hidden while the chat is open — the floating chat takes over the bottom (with its own close) */}
+      <div className={`absolute inset-x-0 bottom-0 z-30 bg-gradient-to-t from-black/80 via-black/40 to-transparent pt-14 transition-opacity duration-150 ${showChat ? 'pointer-events-none opacity-0' : ''}`}>
       {/* low balance */}
       {lowBalance && (
-        <div className="mx-4 mb-3 flex items-center justify-between rounded-2xl bg-black/45 p-2.5 pl-3">
+        <div className="mx-4 mb-3 flex items-center justify-between rounded-2xl bg-black/55 p-2.5 pl-3 backdrop-blur-md">
           <span className="flex items-center gap-2 text-[13px]">
             <AlertTriangle size={16} className="text-gold" /> Low balance — about {Math.max(1, Math.floor(remainingSec / 60))} min left
           </span>
@@ -866,15 +956,38 @@ export default function CallRoom() {
         </div>
       )}
 
-      {/* controls */}
-      <div className="flex items-center justify-center gap-4 pb-8">
-        <Ctrl onClick={() => setMuted((m) => !m)} active={muted}>{muted ? <MicOff size={20} /> : <Mic size={20} />}</Ctrl>
-        <Ctrl onClick={() => setShowChat((s) => !s)} active={showChat}><MessageSquare size={20} /></Ctrl>
-        <Ctrl onClick={() => setGift(true)}><Gift size={20} /></Ctrl>
-        <button onClick={() => finish('user')} className="grid h-14 w-14 place-items-center rounded-full bg-rose-500 text-white">
-          <PhoneOff size={22} />
+      {/* controls — each labelled so it's clear what it does */}
+      <div className="mx-auto flex w-full max-w-[460px] items-end justify-around px-3 pb-7">
+        <Ctrl onClick={() => setMuted((m) => !m)} active={muted} label={muted ? 'Unmute' : 'Mute'}>{muted ? <MicOff size={20} /> : <Mic size={20} />}</Ctrl>
+        {mode === 'video' && (
+          <Ctrl onClick={() => setCamOn((v) => !v)} active={!camOn} label={camOn ? 'Stop video' : 'Start video'}>{camOn ? <Video size={20} /> : <VideoOff size={20} />}</Ctrl>
+        )}
+        <Ctrl onClick={() => setShowChat((s) => !s)} active={showChat} label="Chat" badge={unread}><MessageSquare size={20} /></Ctrl>
+        <Ctrl onClick={() => setGift(true)} label="Send gift"><Gift size={20} /></Ctrl>
+        <button onClick={requestEnd} className="flex w-[64px] flex-col items-center gap-1.5">
+          <span className="grid h-14 w-14 place-items-center rounded-full bg-rose-500 text-white shadow-lg shadow-rose-500/40 active:scale-95"><PhoneOff size={22} /></span>
+          <span className="text-[11px] font-medium text-white/85">End</span>
         </button>
       </div>
+      </div>
+
+      {confirmEnd && (
+        <div className="absolute inset-0 z-[75] flex items-end justify-center bg-black/60 p-4 backdrop-blur-[2px] sm:items-center" onClick={() => setConfirmEnd(false)}>
+          <div className="w-full max-w-[360px] animate-splashPop rounded-3xl bg-white p-5 text-ink shadow-2xl" onClick={(e) => e.stopPropagation()} role="alertdialog" aria-label="End call?">
+            <div className="flex items-center gap-3">
+              <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-rose-50 text-rose-500"><PhoneOff size={18} /></span>
+              <div className="min-w-0">
+                <p className="truncate text-[17px] font-bold">End call with {c?.name || 'the host'}?</p>
+                <p className="text-[13px] text-black/50">You've talked {clock(seconds)}</p>
+              </div>
+            </div>
+            <div className="mt-5 grid grid-cols-2 gap-2.5">
+              <button onClick={() => setConfirmEnd(false)} className="rounded-2xl bg-black/5 py-3 text-[14px] font-semibold text-black/70">Keep talking</button>
+              <button onClick={() => { setConfirmEnd(false); finish('user') }} className="rounded-2xl bg-rose-500 py-3 text-[14px] font-semibold text-white">End call</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {gift && (
         <GiftPicker
@@ -893,10 +1006,15 @@ export default function CallRoom() {
   )
 }
 
-function Ctrl({ children, onClick, active }) {
+/** Labelled round call button — `active` (white) = muted / camera off / panel open. */
+function Ctrl({ children, onClick, active, label, badge = 0 }) {
   return (
-    <button onClick={onClick} className={`grid h-12 w-12 place-items-center rounded-full ${active ? 'bg-white text-ink' : 'bg-white/15 text-white'}`}>
-      {children}
+    <button onClick={onClick} className="flex w-[64px] flex-col items-center gap-1.5" aria-pressed={!!active}>
+      <span className={`relative grid h-12 w-12 place-items-center rounded-full backdrop-blur-md transition active:scale-95 ${active ? 'bg-white text-ink' : 'bg-white/15 text-white'}`}>
+        {children}
+        {badge > 0 && <span className="absolute -right-0.5 -top-0.5 grid h-5 min-w-5 place-items-center rounded-full bg-rose-500 px-1 text-[10.5px] font-bold text-white ring-2 ring-black/30">{badge > 9 ? '9+' : badge}</span>}
+      </span>
+      {label && <span className="whitespace-nowrap text-center text-[11px] font-medium leading-tight text-white/85">{label}</span>}
     </button>
   )
 }
