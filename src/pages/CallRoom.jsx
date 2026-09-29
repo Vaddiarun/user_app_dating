@@ -862,18 +862,6 @@ export default function CallRoom() {
           </div>
         )}
 
-        {/* With the chat panel closed, the host's messages still float up over the
-            video for a few seconds (Instagram-live style) instead of arriving
-            unseen until you tap the chat icon. Re-rendered every second by the
-            call's own elapsed-time ticker, which is what advances the fade-out. */}
-        {!showChat && phase === 'active' && (
-          <FloatingComments
-            items={chatLog.filter((m) => m.senderId === hostId && m.at && Date.now() - m.at < COMMENT_LIFETIME_MS).slice(-4)
-              .map((m) => ({ id: m.id, at: m.at, text: m.content, name: c?.name || 'Host', avatarId: hostId }))}
-            className={`pointer-events-none absolute left-4 right-4 z-40 h-[30vh] sm:right-auto sm:w-80 ${lowBalance ? 'bottom-60' : 'bottom-44'}`}
-          />
-        )}
-
         {showChat && phase === 'active' && (
           // No panel — the conversation floats over the video (like the host app / Instagram live),
           // with just a soft dark fade at the bottom so the text stays readable.

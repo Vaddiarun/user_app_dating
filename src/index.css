@@ -65,3 +65,10 @@ body {
 .agora-video-contain video {
   object-fit: contain !important;
 }
+/* Phones: fill the whole screen like WhatsApp / Instagram calls (the edges of a wide feed are
+ * cropped, the face stays centred). Laptops keep `contain` above. */
+@media (orientation: portrait) and (pointer: coarse) {
+  .agora-video-contain video {
+    object-fit: cover !important;
+  }
+}
