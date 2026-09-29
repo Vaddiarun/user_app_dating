@@ -8,7 +8,6 @@ import { useApp } from '../store/AppStore'
 import { Avatar, Button } from '../components/ui'
 import { clock } from '../lib/format'
 import GiftPicker from '../components/GiftPicker'
-import Watermark from '../components/Watermark'
 import { callsApi, hostsApi, giftsApi, chatApi, ApiError } from '../lib/api'
 import { normalizeHost, normalizeGift } from '../lib/normalize'
 import { joinAndPublish, leaveChannel, PLAY_CONFIG, listCameras, switchCameraFacing } from '../lib/agora'
@@ -691,7 +690,6 @@ export default function CallRoom() {
 
       {/* stage — fills the whole screen; header and controls float above it */}
       <div ref={stageRef} className="absolute inset-0 flex items-center justify-center">
-        {phase === 'active' && <Watermark user={state.user} sessionId={call?.callId} secure layers={2} />}
         {mode === 'video' && phase === 'active' && (() => {
           // Whichever slot is the small PIP always gets z-10 — both boxes are
           // `position: absolute` siblings with no stacking context of their
