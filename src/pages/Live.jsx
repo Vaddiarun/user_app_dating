@@ -195,6 +195,13 @@ export function LiveRoom() {
         if (payload?.broadcastId !== id || payload?.senderId === state.user?.id) return
         setMsgs((m) => [...m, { id: `${payload.senderId}-${payload.createdAt}`, n: payload.senderName || 'Someone', t: payload.content }])
       }))
+      // A gift from anyone in the room ("Rahul sent a Rose"), so every viewer sees it — not just
+      // the sender. Our own gift is already added locally when it's sent, so skip its echo.
+      unsubs.push(onSocketEvent('live:gift', (payload) => {
+        if (payload?.broadcastId !== id || payload?.senderId === state.user?.id) return
+        const giftName = payload?.gift?.name || payload?.giftName || 'gift'
+        setMsgs((m) => [...m, { id: `gift-${payload.senderId}-${payload.createdAt || Date.now()}`, n: payload.senderName || 'Someone', t: `sent a ${giftName} 🎁`, gift: true }])
+      }))
       // The host ended the broadcast (or the backend auto-ended/admin force-ended it).
       // Agora bills every viewer for every minute they stay in the channel, even with no
       // one publishing — so leave it right away rather than waiting for the viewer to
@@ -301,8 +308,8 @@ export function LiveRoom() {
       <div ref={feedRef} className="thin-scroll absolute inset-x-0 bottom-[4.75rem] z-10 max-h-44 space-y-1.5 overflow-y-auto px-4">
         {msgs.length === 0 && <p className="text-[13px] text-white/50">Say something to join the conversation</p>}
         {msgs.map((m) => (
-          <div key={m.id} className="w-fit rounded-full bg-black/40 px-3 py-1.5 text-[13px]">
-            <span className="font-semibold">{m.n}</span> <span className="text-white/85">{m.t}</span>
+          <div key={m.id} className={`w-fit rounded-full px-3 py-1.5 text-[13px] ${m.gift ? 'bg-gradient-to-r from-amber-500/70 to-rose-500/60' : 'bg-black/40'}`}>
+            <span className="font-semibold">{m.n}</span> <span className={m.gift ? 'font-semibold text-white' : 'text-white/85'}>{m.t}</span>
           </div>
         ))}
       </div>
@@ -328,7 +335,7 @@ export function LiveRoom() {
             await giftsApi.send(room?.hostId || id, g.id, 'live', id)
             await actions.refreshWallet()
             setGift(false)
-            setMsgs((m) => [...m, { id: Date.now(), n: userName(state.user), t: `sent a ${g.name}` }])
+            setMsgs((m) => [...m, { id: Date.now(), n: 'You', t: `sent a ${g.name} 🎁`, gift: true }])
             toast(`Sent ${g.name}`)
           }}
         />

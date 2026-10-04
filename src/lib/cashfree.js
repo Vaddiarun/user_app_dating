@@ -28,10 +28,21 @@ function loadSdk() {
 // `error` is set if the user closed it or the payment failed. Some UPI /
 // netbanking flows leave the page instead and come back via the order's
 // return URL (?recharge_id= / ?purchase_id=), which the screens also handle.
+//
+// The modal is a fixed phone-sized pop-up, so on laptops/desktops we open
+// Cashfree's full-page checkout instead (proper desktop layout). It leaves the
+// page and comes back via the same return URL, so the promise only settles
+// here if the checkout couldn't start.
+const isDesktop = () =>
+  window.matchMedia?.('(min-width: 768px) and (hover: hover) and (pointer: fine)').matches
+
 export async function openCashfreeCheckout(paymentSessionId, mode) {
   const Cashfree = await loadSdk()
   const cashfree = Cashfree({ mode })
-  return cashfree.checkout({ paymentSessionId, redirectTarget: '_modal' })
+  if (!isDesktop()) return cashfree.checkout({ paymentSessionId, redirectTarget: '_modal' })
+  const result = await cashfree.checkout({ paymentSessionId, redirectTarget: '_self' })
+  if (result?.error) throw new Error(result.error.message || 'Could not open the payment page')
+  return new Promise(() => {}) // navigating away to Cashfree — keep showing "processing"
 }
 
 // Polls a backend status call until it's no longer "created" (the backend
