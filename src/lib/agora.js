@@ -31,7 +31,15 @@ export function appIdFromToken(token) {
 // (1280x720) is the HD tier, anything above is Full HD at ~2.25x the price. 720p is the
 // best quality that stays in HD — the SDK's default (480p) costs exactly the same.
 // '720p_1' = 1280x720 @ 15fps. Don't raise this to 1080p without re-checking the bill.
+//
+// Phones held upright get the same pixel count as portrait (720x1280): asking a portrait camera for
+// landscape 1280x720 made the browser crop a wide strip out of the middle and scale it up, so the
+// other side saw a zoomed-in face. Laptops keep 1280x720.
 const CALL_VIDEO_ENCODER = '720p_1'
+function callVideoEncoder() {
+  const upright = typeof window !== 'undefined' && !!window.matchMedia?.('(orientation: portrait) and (pointer: coarse)').matches
+  return upright ? { width: 720, height: 1280, frameRate: 15 } : CALL_VIDEO_ENCODER
+}
 
 /** Joins an Agora RTC channel, publishes the local mic + camera, and returns everything
  * needed to render/control the session. `onRemoteUser(user, mediaType)` fires whenever a
@@ -63,7 +71,7 @@ export async function joinAndPublish({ channelName, token, uid, video = true, on
   let videoError = null
   if (video) {
     try {
-      localVideoTrack = await RTC.createCameraVideoTrack({ encoderConfig: CALL_VIDEO_ENCODER })
+      localVideoTrack = await RTC.createCameraVideoTrack({ encoderConfig: callVideoEncoder() })
     } catch (e) {
       videoError = e
     }
@@ -140,7 +148,7 @@ export async function listCameras() {
  * Android Chrome and iOS Safari even when device labels aren't. */
 export async function switchCameraFacing(client, track, facingMode) {
   const RTC = await sdk()
-  const newTrack = await RTC.createCameraVideoTrack({ facingMode, encoderConfig: CALL_VIDEO_ENCODER })
+  const newTrack = await RTC.createCameraVideoTrack({ facingMode, encoderConfig: callVideoEncoder() })
   try {
     if (track) {
       await client.unpublish(track)

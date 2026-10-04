@@ -80,8 +80,11 @@ export default function Chat() {
   }
 
   return (
-    <div className="mx-auto max-w-6xl">
-      <div className="grid h-[calc(100dvh-8.5rem)] overflow-hidden rounded-2xl border border-line bg-card md:grid-cols-[300px_1fr]">
+    // Laptop (lg): fills the whole area under the top bar, edge to edge — it used to sit as a
+    // bordered card inside the page's own padding, a box floating in empty space. The negative
+    // margins cancel AppShell's <main> padding (lg: px-6 py-5 pb-8); 71px is its sticky header's height.
+    <div className="mx-auto max-w-6xl lg:-mx-6 lg:-mb-8 lg:-mt-5 lg:max-w-none">
+      <div className="grid h-[calc(100dvh-8.5rem)] overflow-hidden rounded-2xl border border-line bg-card md:grid-cols-[300px_1fr] lg:h-[calc(100dvh-71px)] lg:grid-cols-[340px_1fr] lg:rounded-none lg:border-0">
         {/* list */}
         <div className={`min-h-0 flex-col border-r border-line ${id ? 'hidden md:flex' : 'flex'}`}>
           <div className="border-b border-line px-4 py-3 text-[15px] font-bold text-ink">Messages</div>

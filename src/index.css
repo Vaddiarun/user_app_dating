@@ -52,3 +52,23 @@ body {
     scroll-behavior: auto !important;
   }
 }
+
+/* Remote video in a call: show the whole picture (no cropping of a wide 16:9 feed in a tall
+ * screen) on a transparent player, so the blurred copy behind it fills the space around it. */
+.agora-video-contain > div,
+.agora-video-contain > div > video,
+.agora-video-contain > video {
+  width: 100% !important;
+  height: 100% !important;
+  background: transparent !important;
+}
+.agora-video-contain video {
+  object-fit: contain !important;
+}
+/* Phones: fill the whole screen like WhatsApp / Instagram calls (the edges of a wide feed are
+ * cropped, the face stays centred). Laptops keep `contain` above. */
+@media (orientation: portrait) and (pointer: coarse) {
+  .agora-video-contain video {
+    object-fit: cover !important;
+  }
+}

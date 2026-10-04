@@ -5,7 +5,6 @@ import { useApp } from '../store/AppStore'
 import { Avatar, GradientBox, EmptyState } from '../components/ui'
 import { compact, userName } from '../lib/format'
 import GiftPicker from '../components/GiftPicker'
-import Watermark from '../components/Watermark'
 import { liveApi, giftsApi, ApiError } from '../lib/api'
 import { joinAsAudience, leaveChannel, PLAY_CONFIG } from '../lib/agora'
 import { watchSfuBroadcast } from '../lib/sfu'
@@ -277,7 +276,6 @@ export function LiveRoom() {
           {rtcErr && <p className="max-w-xs px-6 text-center text-[13px] text-white/70">{rtcErr}</p>}
         </div>
       )}
-      <Watermark user={state.user} />
 
       <div className="pointer-events-none absolute inset-x-0 top-0 h-28 bg-gradient-to-b from-black/60 to-transparent" />
       <div className="pointer-events-none absolute inset-x-0 bottom-0 h-64 bg-gradient-to-t from-black/70 to-transparent" />
