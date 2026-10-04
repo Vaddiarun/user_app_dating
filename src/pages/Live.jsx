@@ -8,6 +8,7 @@ import GiftPicker from '../components/GiftPicker'
 import Watermark from '../components/Watermark'
 import { liveApi, giftsApi, ApiError } from '../lib/api'
 import { joinAsAudience, leaveChannel, PLAY_CONFIG } from '../lib/agora'
+import { watchSfuBroadcast } from '../lib/sfu'
 import { getSocket, onSocketEvent } from '../lib/socket'
 
 const G = [['#9b8fe0', '#5b28d6'], ['#5fc9a0', '#2f9878'], ['#e6b980', '#c9822b'], ['#d68f9b', '#9b3f5f']]
@@ -82,6 +83,7 @@ export function LiveRoom() {
   const [gift, setGift] = useState(false)
   const [remoteJoined, setRemoteJoined] = useState(false)
   const [rtcErr, setRtcErr] = useState('')
+  const [pauseHiddenVideo, setPauseHiddenVideo] = useState(false)
   const feedRef = useRef(null)
   const remoteVideoRef = useRef(null)
   const joinedRef = useRef(false)
@@ -114,24 +116,36 @@ export function LiveRoom() {
       .then((res) => {
         if (!alive) return
         joinedRef.current = true
-        if (!res?.channelName || !res?.agoraToken) return
-        joinAsAudience({
-          channelName: res.channelName,
-          token: res.agoraToken,
-          uid: state.user?.id,
-          onRemoteUser: (user, mediaType, left) => {
-            if (left) {
-              if (mediaType === 'video') setRemoteJoined(false)
-              return
-            }
-            if (mediaType === 'video') {
-              user.videoTrack?.play(remoteVideoRef.current, PLAY_CONFIG)
-              setRemoteJoined(true)
-            } else if (mediaType === 'audio') {
-              user.audioTrack?.play()
-            }
-          },
-        })
+        setPauseHiddenVideo(Boolean(res?.pauseHiddenVideo))
+        const onRemoteUser = (user, mediaType, left) => {
+          if (left) {
+            if (mediaType === 'video') setRemoteJoined(false)
+            return
+          }
+          if (mediaType === 'video') {
+            user.videoTrack?.play(remoteVideoRef.current, PLAY_CONFIG)
+            setRemoteJoined(true)
+          } else if (mediaType === 'audio') {
+            user.audioTrack?.play()
+          }
+        }
+        // Which network carries this broadcast — admin-switchable on the backend, fixed per
+        // broadcast. 'agora' joins the channel with agoraToken; 'cloudflare' pulls the host's
+        // stream from Cloudflare's SFU (lib/sfu.js). Both return the same session shape.
+        let join
+        if (res?.mediaProvider === 'cloudflare') {
+          if (!res.iceServers) return
+          join = watchSfuBroadcast({
+            iceServers: res.iceServers,
+            subscribe: () => liveApi.sfuSubscribe(id),
+            answer: (sessionId, sdp) => liveApi.sfuAnswer(id, sessionId, sdp),
+            onRemoteUser,
+          })
+        } else {
+          if (!res?.channelName || !res?.agoraToken) return
+          join = joinAsAudience({ channelName: res.channelName, token: res.agoraToken, uid: state.user?.id, onRemoteUser })
+        }
+        join
           .then((session) => {
             if (!alive) { leaveChannel(session); return }
             sessionRef.current = session
@@ -148,6 +162,19 @@ export function LiveRoom() {
       if (sessionRef.current) leaveChannel(sessionRef.current)
     }
   }, [id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Admin switch (pauseHiddenVideo on the join response): stop receiving the host's video
+  // while this tab/app is hidden — nobody's looking at it, and Agora then bills the minute at
+  // the audio rate instead of HD. Audio keeps playing; video resumes on return.
+  useEffect(() => {
+    if (!pauseHiddenVideo) return
+    const onVisibility = () => {
+      sessionRef.current?.setVideoReceiving?.(document.visibilityState !== 'hidden')
+        .catch((e) => console.error('Could not change live video receiving:', e))
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => document.removeEventListener('visibilitychange', onVisibility)
+  }, [pauseHiddenVideo])
 
   useEffect(() => {
     feedRef.current?.scrollTo({ top: feedRef.current.scrollHeight, behavior: 'smooth' })
@@ -173,6 +200,12 @@ export function LiveRoom() {
       // Agora bills every viewer for every minute they stay in the channel, even with no
       // one publishing — so leave it right away rather than waiting for the viewer to
       // navigate off a dead stream.
+      // Cloudflare broadcasts: the host (re)published — e.g. after a reconnect, which gives
+      // them a new SFU session — so pull their current stream.
+      unsubs.push(onSocketEvent('live:media-updated', (payload) => {
+        if (payload?.broadcastId !== id) return
+        sessionRef.current?.repull?.().catch((e) => console.error('Live re-pull failed:', e))
+      }))
       unsubs.push(onSocketEvent('live:ended', (payload) => {
         if (payload?.broadcastId !== id) return
         if (sessionRef.current) { leaveChannel(sessionRef.current); sessionRef.current = null }

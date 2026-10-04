@@ -7,6 +7,7 @@ import { useApp } from '../store/AppStore'
 import { Button, Card, EmptyState } from '../components/ui'
 import { rupees } from '../lib/format'
 import { walletApi, ApiError } from '../lib/api'
+import { openCashfreeCheckout, waitForSettlement } from '../lib/cashfree'
 
 export default function Wallet() {
   const { state } = useApp()
@@ -74,6 +75,19 @@ export function AddBalance() {
   const [phase, setPhase] = useState('form') // form | processing | done | failed
   const [error, setError] = useState('')
 
+  // Settles a recharge from what the backend reports (it confirms with Cashfree).
+  const finish = async (txnId) => {
+    const txn = await waitForSettlement(() => walletApi.rechargeStatus(txnId))
+    if (txn.status === 'success') {
+      await actions.refreshWallet()
+      if (state.notifPrefs?.wallet) actions.addNotification({ kind: 'wallet', title: 'Balance added', body: `Recharge of ₹${rupees(txn.amountPaise)} confirmed` })
+      setPhase('done')
+    } else {
+      setError(txn.status === 'failed' ? '' : "We haven't received your payment. If money was deducted, it will be added to your balance automatically once confirmed.")
+      setPhase('failed')
+    }
+  }
+
   useEffect(() => {
     walletApi.packages()
       .then((res) => {
@@ -83,6 +97,12 @@ export function AddBalance() {
         setPack(list.find((p) => p.id === preselect) || list[0] || null)
       })
       .catch(() => setPackages([]))
+    // Back from a checkout that left the page (some UPI/netbanking flows).
+    const returning = sp.get('recharge_id')
+    if (returning) {
+      setPhase('processing')
+      finish(returning).catch((err) => { setError(err instanceof ApiError ? err.message : 'Something went wrong'); setPhase('failed') })
+    }
   }, []) // eslint-disable-line
 
   const pay = async (outcome = 'success') => {
@@ -91,17 +111,15 @@ export function AddBalance() {
     setError('')
     try {
       const txn = await walletApi.initiateRecharge(pack.id)
-      await new Promise((r) => setTimeout(r, 1200))
-      await walletApi.devResolveRecharge(txn.id, outcome)
-      if (outcome === 'success') {
-        await actions.refreshWallet()
-        if (state.notifPrefs?.wallet) actions.addNotification({ kind: 'wallet', title: 'Balance added', body: `Recharge of ₹${((pack.pricePaise ?? pack.price ?? 0) / 100) || pack.amount} confirmed` })
-        setPhase('done')
+      if (txn.paymentSessionId && outcome === 'success') {
+        await openCashfreeCheckout(txn.paymentSessionId, txn.checkoutMode)
       } else {
-        setPhase('failed')
+        // No gateway configured (local dev), or the dev-only "simulate decline" link.
+        await walletApi.devResolveRecharge(txn.id, outcome)
       }
+      await finish(txn.id)
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Something went wrong')
+      setError(err instanceof ApiError || err instanceof Error ? err.message : 'Something went wrong')
       setPhase('failed')
     }
   }
@@ -173,13 +191,15 @@ export function AddBalance() {
 
       <p className="mt-6 text-[12px] font-bold uppercase tracking-wide text-subtle">Payment method</p>
       <div className="mt-2 rounded-2xl border border-line px-4 py-3.5 text-[13px] text-subtle">
-        No real payment gateway is wired up yet — this confirms instantly via the backend's dev-resolve endpoint.
+        UPI, cards, netbanking and wallets — paid securely through Cashfree.
       </div>
 
       <Button variant="gold" className="mt-5 w-full py-3.5" disabled={!pack} onClick={() => pay('success')}>
-        Pay ₹{pack ? ((pack.pricePaise ?? pack.price ?? 0) / 100) || pack.amount : ''}
+        Pay ₹{pack ? rupees(pack.pricePaise) : ''}
       </Button>
-      <button className="mt-3 w-full text-[12px] font-medium text-subtle underline" onClick={() => pay('failed')}>Simulate a declined payment</button>
+      {import.meta.env.DEV && (
+        <button className="mt-3 w-full text-[12px] font-medium text-subtle underline" onClick={() => pay('failed')}>Simulate a declined payment (dev only)</button>
+      )}
     </div>
   )
 }

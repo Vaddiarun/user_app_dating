@@ -10,7 +10,8 @@ import GiftPicker from '../components/GiftPicker'
 import Watermark from '../components/Watermark'
 import { callsApi, hostsApi, giftsApi, chatApi, ApiError } from '../lib/api'
 import { normalizeHost, normalizeGift } from '../lib/normalize'
-import { joinAndPublish, leaveChannel, PLAY_CONFIG, listCameras, switchCameraFacing } from '../lib/agora'
+import { joinAndPublish, leaveChannel, PLAY_CONFIG, listCameras, switchCameraFacing, getAgoraCallStats } from '../lib/agora'
+import { joinP2P, listCamerasP2P, switchCameraFacingP2P } from '../lib/p2p'
 import { getSocket, onSocketEvent } from '../lib/socket'
 import { startRingback } from '../lib/ringback'
 import { logSecurityEvent, isDisplayCaptureApiSupported } from '../lib/security'
@@ -65,7 +66,7 @@ export default function CallRoom() {
   const { state, actions, toast } = useApp()
 
   const [c, setC] = useState(null)
-  const [call, setCall] = useState(null) // { callId, ratePaise, channelName, agoraToken }
+  const [call, setCall] = useState(null) // { callId, ratePaise, channelName, mediaProvider, agoraToken, iceServers }
   const [phase, setPhase] = useState('connecting') // connecting | active | error
   const [error, setError] = useState('')
   const [errorKind, setErrorKind] = useState('generic') // 'balance' | 'generic'
@@ -82,6 +83,8 @@ export default function CallRoom() {
   const [rtcErr, setRtcErr] = useState('') // fatal — mic/join never came up, call has no audio at all
   const [camErr, setCamErr] = useState('') // non-fatal — camera specifically failed, audio still works
   const [remoteJoined, setRemoteJoined] = useState(false)
+  const remoteJoinedRef = useRef(false)
+  remoteJoinedRef.current = remoteJoined
   const [swapped, setSwapped] = useState(false) // which video is full-screen vs the small PIP tile
   const [cameras, setCameras] = useState([])
   const [facing, setFacing] = useState('user')
@@ -146,7 +149,14 @@ export default function CallRoom() {
           callId: callRes.callId || callRes.id,
           ratePaise: callRes.ratePerMinutePaise ?? callRes.ratePaise ?? host?.ratePaise ?? 0,
           channelName: callRes.channelName,
+          // Which network carries this call's media — admin-switchable on the backend and
+          // fixed per call. 'agora' uses agoraToken; 'p2p' uses iceServers (lib/p2p.js).
+          mediaProvider: callRes.mediaProvider || 'agora',
           agoraToken: callRes.agoraToken,
+          iceServers: callRes.iceServers,
+          // 'auto' calls: if the direct connection can't be made, the call moves to Agora
+          // (fallBackToAgora below) instead of failing.
+          agoraFallbackAllowed: Boolean(callRes.agoraFallbackAllowed),
         })
       })
       .catch((err) => {
@@ -165,10 +175,45 @@ export default function CallRoom() {
     setPhase('active')
   }
 
+  // Moves this call's media onto Agora — either because our own direct connection gave up
+  // (we ask the backend), or because the host's did (`call:media-fallback` brings our token).
+  // Changing call.mediaProvider re-runs the join effect, which leaves the p2p session and
+  // joins Agora; billing is server-side and unaffected.
+  const switchToAgora = (media) => {
+    setCall((cur) => (cur && cur.mediaProvider === 'p2p'
+      ? { ...cur, mediaProvider: 'agora', channelName: media.channelName, agoraToken: media.agoraToken, iceServers: null }
+      : cur))
+  }
+  const fallBackToAgora = () => {
+    const cid = callRef.current?.callId
+    if (!cid || endedRef.current) return
+    callsApi.mediaFallback(cid)
+      .then(switchToAgora)
+      .catch((e) => console.error('Could not move the call to Agora:', e))
+  }
+
+  // Connection-quality summary for the admin p2p-vs-Agora comparison, then leave. Stats have
+  // to be read before leaving (that closes the connection they come from). Never blocks or
+  // fails the hang-up itself.
+  const reportAndLeave = async (session) => {
+    const cid = callRef.current?.callId
+    try {
+      if (cid && acceptedRef.current) {
+        const report = session.kind === 'p2p'
+          ? await session.getStats()
+          : getAgoraCallStats(session.client, remoteJoinedRef.current)
+        callsApi.mediaReport(cid, report).catch(() => {})
+      }
+    } catch (e) {
+      console.error('Could not collect call stats:', e)
+    }
+    await leaveChannel(session)
+  }
+
   const handleServerEnd = (status, totalAmountPaise) => {
     if (endedRef.current) return
     endedRef.current = true
-    if (sessionRef.current) { leaveChannel(sessionRef.current); sessionRef.current = null }
+    if (sessionRef.current) { reportAndLeave(sessionRef.current); sessionRef.current = null }
     const st = (status || '').toLowerCase()
     const amt = totalAmountPaise ?? ''
     const cid = callRef.current?.callId
@@ -189,7 +234,7 @@ export default function CallRoom() {
   const finish = async (reason) => {
     if (endedRef.current) return
     endedRef.current = true
-    if (sessionRef.current) { await leaveChannel(sessionRef.current); sessionRef.current = null }
+    if (sessionRef.current) { await reportAndLeave(sessionRef.current); sessionRef.current = null }
     const cid = callRef.current?.callId
     const wasActive = acceptedRef.current
     if (!cid) {
@@ -246,6 +291,10 @@ export default function CallRoom() {
       unsubs.push(onSocketEvent('call:ended', (payload) => {
         if (payload?.callId !== call.callId) return
         handleServerEnd(payload?.status, payload?.totalAmountPaise)
+      }))
+      unsubs.push(onSocketEvent('call:media-fallback', (payload) => {
+        if (payload?.callId !== call.callId) return
+        switchToAgora(payload)
       }))
       // The host asking for a gift mid-call — the event only carries hostId
       // (no callId), so it's scoped to "this call's host" instead; a user is
@@ -334,32 +383,51 @@ export default function CallRoom() {
   // Real Agora join, once the host has actually answered — mirrors the host
   // app's ActiveCall. Before this, the call screen showed "connected" the
   // moment it opened with no real audio/video ever established.
+  //
+  // The same effect joins either provider — lib/p2p.js returns a session shaped like
+  // Agora's, so everything after the join (play, mute, leave) doesn't care which.
   useEffect(() => {
-    if (phase !== 'active' || !call?.channelName || !call?.agoraToken) return
+    if (phase !== 'active' || !call) return
+    const isP2P = call.mediaProvider === 'p2p'
+    if (isP2P ? !call.iceServers : !call.channelName || !call.agoraToken) return
     let cancelled = false
-    joinAndPublish({
-      channelName: call.channelName,
-      token: call.agoraToken,
-      uid: state.user?.id,
-      video: mode === 'video',
-      onRemoteUser: (user, mediaType, left) => {
-        // Agora fires this once per media type (audio and video publish/
-        // subscribe independently) — this used to bail out entirely for
-        // anything but 'video', so the caller's subscribed audio track was
-        // never actually started. Subscribing alone doesn't play it; the
-        // SDK requires an explicit .play() call, same as video.
-        if (left) {
-          if (mediaType === 'video') setRemoteJoined(false)
-          return
-        }
-        if (mediaType === 'video') {
-          user.videoTrack?.play(remoteVideoRef.current)
-          setRemoteJoined(true)
-        } else if (mediaType === 'audio') {
-          user.audioTrack?.play()
-        }
-      },
-    })
+    const onRemoteUser = (user, mediaType, left) => {
+      // Fires once per media type (audio and video publish/subscribe
+      // independently) — this used to bail out entirely for anything but
+      // 'video', so the caller's subscribed audio track was never actually
+      // started. Subscribing alone doesn't play it; an explicit .play() call
+      // is required, same as video.
+      if (left) {
+        if (mediaType === 'video') setRemoteJoined(false)
+        return
+      }
+      if (mediaType === 'video') {
+        user.videoTrack?.play(remoteVideoRef.current)
+        setRemoteJoined(true)
+      } else if (mediaType === 'audio') {
+        user.audioTrack?.play()
+      }
+    }
+    const join = isP2P
+      ? joinP2P({
+          iceServers: call.iceServers,
+          role: 'offerer', // the caller always sends the offer; the host answers
+          video: mode === 'video',
+          sendSignal: (data) => callsApi.signal(call.callId, data),
+          onSignal: (handler) => onSocketEvent('call:signal', (payload) => {
+            if (payload?.callId === call.callId) handler(payload.data)
+          }),
+          onRemoteUser,
+          onUnrecoverable: call.agoraFallbackAllowed ? fallBackToAgora : undefined,
+        })
+      : joinAndPublish({
+          channelName: call.channelName,
+          token: call.agoraToken,
+          uid: state.user?.id,
+          video: mode === 'video',
+          onRemoteUser,
+        })
+    join
       .then((session) => {
         if (cancelled) { leaveChannel(session); return }
         sessionRef.current = session
@@ -376,14 +444,14 @@ export default function CallRoom() {
         // is logged for debugging but never shown as-is; it's not something
         // a caller can act on. What they need is the same plain, actionable
         // framing as the camera-only case.
-        console.error('Agora join failed:', e)
+        console.error(`${isP2P ? 'p2p' : 'Agora'} join failed:`, e)
         setRtcErr("Couldn't access your microphone. Check mic permissions for this site and that no other app is using it.")
       })
     return () => {
       cancelled = true
       if (sessionRef.current) { leaveChannel(sessionRef.current); sessionRef.current = null }
     }
-  }, [phase, call?.channelName, call?.agoraToken]) // eslint-disable-line
+  }, [phase, call?.callId, call?.mediaProvider]) // eslint-disable-line
 
   useEffect(() => { sessionRef.current?.localAudioTrack?.setEnabled(!muted) }, [muted])
 
@@ -403,7 +471,8 @@ export default function CallRoom() {
   // switch to.
   useEffect(() => {
     if (phase !== 'active' || mode !== 'video' || !sessionRef.current?.localVideoTrack) return
-    listCameras().then(setCameras).catch(() => {})
+    const list = sessionRef.current.kind === 'p2p' ? listCamerasP2P : listCameras
+    list().then(setCameras).catch(() => {})
   }, [phase, mode, remoteJoined])
 
   const flipCamera = async () => {
@@ -412,7 +481,9 @@ export default function CallRoom() {
     setFlipping(true)
     try {
       const next = facing === 'user' ? 'environment' : 'user'
-      const newTrack = await switchCameraFacing(session.client, session.localVideoTrack, next)
+      const newTrack = session.kind === 'p2p'
+        ? await switchCameraFacingP2P(session.localVideoTrack, next)
+        : await switchCameraFacing(session.client, session.localVideoTrack, next)
       session.localVideoTrack = newTrack
       newTrack.play(localVideoRef.current, PLAY_CONFIG)
       setFacing(next)
