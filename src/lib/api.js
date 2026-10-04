@@ -225,7 +225,11 @@ export const walletApi = {
 /* ---------------- VIP Subscription ---------------- */
 export const vipApi = {
   plans: () => request('/vip/plans'),
+  // Starts a paid purchase ({ id, status, paymentSessionId, checkoutMode }) — VIP
+  // only activates once purchaseStatus reports "success".
   subscribe: (planId) => request('/vip/subscribe', { method: 'POST', body: { planId } }),
+  purchaseStatus: (purchaseId) => request(`/vip/purchases/${purchaseId}`),
+  devResolvePurchase: (purchaseId, outcome) => request(`/vip/purchases/${purchaseId}/dev-resolve`, { method: 'POST', body: { outcome } }),
   cancel: (subscriptionId) => request(`/me/subscriptions/${subscriptionId}/cancel`, { method: 'POST' }),
 }
 
@@ -235,6 +239,13 @@ export const callsApi = {
   get: (id) => request(`/calls/${id}`),
   end: (id) => request(`/calls/${id}/end`, { method: 'POST' }),
   rate: (id, stars) => request(`/calls/${id}/rating`, { method: 'POST', body: { stars } }),
+  // p2p calls only — relays WebRTC setup (hello/offer/answer/candidate) to the other participant.
+  signal: (id, data) => request(`/calls/${id}/signal`, { method: 'POST', body: { data } }),
+  // "auto" calls only — the direct connection failed; moves the call to Agora and returns
+  // this side's { channelName, mediaProvider: 'agora', agoraToken }.
+  mediaFallback: (id) => request(`/calls/${id}/media-fallback`, { method: 'POST' }),
+  // Once per call, when it ends — connection quality for the admin p2p-vs-Agora comparison.
+  mediaReport: (id, report) => request(`/calls/${id}/media-report`, { method: 'POST', body: report }),
 }
 
 /* ---------------- Chat ---------------- */
@@ -264,6 +275,9 @@ export const liveApi = {
   join: (id) => request(`/live/broadcasts/${id}/join`, { method: 'POST' }),
   chat: (id, content) => request(`/live/broadcasts/${id}/chat`, { method: 'POST', body: { content } }),
   leave: (id) => request(`/live/broadcasts/${id}/leave`, { method: 'POST' }),
+  // "cloudflare" broadcasts only (lib/sfu.js): the SFU's offer of the host's tracks, then our answer.
+  sfuSubscribe: (id) => request(`/live/broadcasts/${id}/sfu/subscribe`, { method: 'POST' }),
+  sfuAnswer: (id, sessionId, sdp) => request(`/live/broadcasts/${id}/sfu/answer`, { method: 'POST', body: { sessionId, sdp } }),
 }
 
 /* ---------------- Moderation ---------------- */

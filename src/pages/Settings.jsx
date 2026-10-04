@@ -7,6 +7,7 @@ import {
 import { useApp } from '../store/AppStore'
 import { Avatar, Button, Card, Toggle, EmptyState } from '../components/ui'
 import { rupees, userName, userHandle } from '../lib/format'
+import { openCashfreeCheckout, waitForSettlement } from '../lib/cashfree'
 import {
   meApi, vipApi, walletApi, grievanceApi, uploadToS3, ApiError,
 } from '../lib/api'
@@ -262,24 +263,47 @@ export function Vip() {
     [<Headphones size={16} />, 'VIP Care', 'Priority customer support access'],
   ]
 
+  // VIP only activates once the backend confirms the payment with Cashfree.
+  const finish = async (purchaseId) => {
+    const purchase = await waitForSettlement(() => vipApi.purchaseStatus(purchaseId))
+    if (purchase.status === 'success') {
+      await actions.refreshUser()
+      toast('Welcome to VIP 👑')
+      nav('/profile')
+    } else if (purchase.status === 'failed') {
+      toast('Payment failed — VIP was not activated', { tone: 'error' })
+    } else {
+      toast("We haven't received your payment yet. If money was deducted, VIP will activate automatically once confirmed.", { tone: 'error' })
+    }
+  }
+
   useEffect(() => {
     vipApi.plans().then((res) => {
       const list = res.plans || []
       setPlans(list)
       setPlan(list.find((p) => p.name === '3 Months') || list[0] || null)
     }).catch(() => setPlans([]))
-  }, [])
+    // Back from a checkout that left the page (some UPI/netbanking flows).
+    const returning = new URLSearchParams(window.location.search).get('purchase_id')
+    if (returning) {
+      setBusy(true)
+      finish(returning).catch(() => toast('Could not check your payment', { tone: 'error' })).finally(() => setBusy(false))
+    }
+  }, []) // eslint-disable-line
 
   const subscribe = async () => {
     if (!plan) return
     setBusy(true)
     try {
-      await vipApi.subscribe(plan.id)
-      await actions.refreshUser()
-      toast('Welcome to VIP 👑')
-      nav('/profile')
+      const purchase = await vipApi.subscribe(plan.id)
+      if (purchase.paymentSessionId) {
+        await openCashfreeCheckout(purchase.paymentSessionId, purchase.checkoutMode)
+      } else {
+        await vipApi.devResolvePurchase(purchase.id, 'success') // no gateway configured (local dev)
+      }
+      await finish(purchase.id)
     } catch (err) {
-      toast(err instanceof ApiError ? err.message : 'Could not subscribe', { tone: 'error' })
+      toast(err instanceof ApiError || err instanceof Error ? err.message : 'Could not subscribe', { tone: 'error' })
     } finally {
       setBusy(false)
     }

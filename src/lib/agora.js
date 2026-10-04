@@ -96,9 +96,11 @@ export async function joinAsAudience({ channelName, token, uid, onRemoteUser } =
   const appId = appIdFromToken(token)
   const client = RTC.createClient({ mode: 'live', codec: 'vp8' })
   await client.setClientRole('audience', { level: 1 })
+  let receiveVideo = true
 
   if (onRemoteUser) {
     client.on('user-published', async (user, mediaType) => {
+      if (mediaType === 'video' && !receiveVideo) return // picked up by setVideoReceiving(true)
       await client.subscribe(user, mediaType)
       onRemoteUser(user, mediaType)
     })
@@ -106,7 +108,25 @@ export async function joinAsAudience({ channelName, token, uid, onRemoteUser } =
   }
 
   await client.join(appId, channelName, token, uid ?? null)
-  return { client }
+
+  /** Stop/resume receiving the host's video (audio keeps playing). Agora bills a viewer by
+   * the video they receive — with none, the minute is billed at the much cheaper audio rate. */
+  const setVideoReceiving = async (enabled) => {
+    if (receiveVideo === enabled) return
+    receiveVideo = enabled
+    for (const user of client.remoteUsers) {
+      if (!user.hasVideo) continue
+      if (enabled) {
+        await client.subscribe(user, 'video')
+        onRemoteUser?.(user, 'video')
+      } else {
+        await client.unsubscribe(user, 'video')
+        onRemoteUser?.(user, 'video', true)
+      }
+    }
+  }
+
+  return { client, setVideoReceiving }
 }
 
 /** Lists available camera input devices — used to know whether a flip-camera
@@ -155,4 +175,18 @@ export async function leaveChannel({ client, localAudioTrack, localVideoTrack } 
   } catch {
     // best-effort — we're tearing down regardless
   }
+}
+
+/** Summary for POST /calls/:id/media-report — call before leaveChannel(). Agora's SDK only
+ * exposes current values (not whole-call averages), so these are end-of-call snapshots. */
+export function getAgoraCallStats(client, connected) {
+  const report = { connected }
+  const rtc = client.getRTCStats()
+  if (rtc?.RTT) report.avgRttMs = Math.round(rtc.RTT)
+  const video = Object.values(client.getRemoteVideoStats() || {})[0]
+  if (video) {
+    report.packetLossPercent = Math.min(100, Math.max(0, Number(video.packetLossRate) || 0))
+    if (video.receiveBitrate) report.avgVideoKbps = Math.round(video.receiveBitrate / 1000)
+  }
+  return report
 }
