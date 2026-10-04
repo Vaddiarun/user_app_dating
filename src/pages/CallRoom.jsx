@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
   Mic, MicOff, MessageSquare, Gift, PhoneOff, X, AlertTriangle, Wallet, RotateCw, SwitchCamera, HeartHandshake, Send, Smile,
-  Video, VideoOff,
+  Video, VideoOff, Image as ImageIcon,
 } from 'lucide-react'
 import { useApp } from '../store/AppStore'
 import { Avatar, Button } from '../components/ui'
@@ -14,6 +14,7 @@ import { joinAndPublish, leaveChannel, PLAY_CONFIG, listCameras, switchCameraFac
 import { getSocket, onSocketEvent } from '../lib/socket'
 import { startRingback } from '../lib/ringback'
 import { logSecurityEvent, isDisplayCaptureApiSupported } from '../lib/security'
+import { sendChatImage, isImageMessage } from '../lib/chatImage'
 
 const POLL_MS = 5000
 // The backend's real call_status enum (calls.status) — ringing/ongoing are
@@ -28,7 +29,7 @@ const COMMENT_FADE_MS = 1200
  * video, kept legible with a text shadow. Callers should filter `messages` to
  * the last few within COMMENT_LIFETIME_MS and re-render periodically (the call's
  * own elapsed-time ticker already does this every second) to advance the fade. */
-function FloatingComments({ items, fadeOut = true, scrollable = false, scrollRef, className = '' }) {
+function FloatingComments({ items, fadeOut = true, scrollable = false, scrollRef, onOpenImage, className = '' }) {
   const now = Date.now()
   const mask = 'linear-gradient(to bottom, transparent, #000 22%)'
   return (
@@ -43,10 +44,27 @@ function FloatingComments({ items, fadeOut = true, scrollable = false, scrollRef
             <div key={m.id ?? i} className="transition-opacity" style={{ opacity: fading ? 0 : 1, transitionDuration: `${COMMENT_FADE_MS}ms` }}>
               <div className="flex max-w-[88%] animate-fadeIn items-start gap-2">
                 <Avatar id={m.avatarId} size={26} className="mt-0.5 shrink-0 rounded-full ring-1 ring-white/30" />
-                <p className="text-[13.5px] leading-snug text-white" style={{ textShadow: '0 1px 3px rgba(0,0,0,.8)' }}>
+                <div className="text-[13.5px] leading-snug text-white" style={{ textShadow: '0 1px 3px rgba(0,0,0,.8)' }}>
                   <span className="block text-[12px] font-bold text-white/85">{m.name}</span>
-                  {m.text}
-                </p>
+                  {m.image ? (
+                    <button
+                      type="button"
+                      onClick={() => m.status !== 'sending' && onOpenImage?.(m.image)}
+                      className="relative mt-1 block overflow-hidden rounded-xl ring-1 ring-white/25"
+                      aria-label="Open photo"
+                    >
+                      <img src={m.image} alt="" className={`block max-h-52 max-w-[180px] object-cover ${m.status === 'sending' ? 'opacity-60' : ''}`} />
+                      {m.status === 'sending' && (
+                        <span className="absolute inset-0 grid place-items-center">
+                          <span className="h-7 w-7 animate-spin rounded-full border-2 border-white/40 border-t-white" />
+                        </span>
+                      )}
+                      {m.status === 'failed' && (
+                        <span className="absolute inset-x-0 bottom-0 bg-rose-600/90 px-2 py-1 text-center text-[11px] font-semibold">Not sent</span>
+                      )}
+                    </button>
+                  ) : m.text}
+                </div>
               </div>
             </div>
           )
@@ -140,6 +158,8 @@ export default function CallRoom() {
   const pipRef = useRef(null)
   const pipDragRef = useRef({ dragging: false, pointerId: null, startClientX: 0, startClientY: 0, startX: 0, startY: 0, moved: 0 })
   const chatFeedRef = useRef(null)
+  const chatFileRef = useRef(null)
+  const [viewingPhoto, setViewingPhoto] = useState(null)
 
   // set up: fetch host (for name/avatar/rate) + initiate the call. The backend
   // hands back this user's own Agora channel/token right here (POST /calls) —
@@ -299,7 +319,7 @@ export default function CallRoom() {
       // above, since chat:message only carries senderId, no callId.
       unsubs.push(onSocketEvent('chat:message', (m) => {
         if (m?.senderId !== hostId) return
-        setChatLog((l) => [...l, { id: m.messageId, senderId: m.senderId, content: m.content, at: Date.now() }])
+        setChatLog((l) => [...l, { id: m.messageId, senderId: m.senderId, content: m.content, type: m.type, mediaUrl: m.mediaUrl, at: Date.now() }])
         if (!showChatRef.current) setUnread((n) => n + 1)
       }))
     }
@@ -568,6 +588,25 @@ export default function CallRoom() {
       setChatErr(err instanceof ApiError ? err.message : 'Could not send that message.')
     } finally {
       setChatSending(false)
+    }
+  }
+
+  // Photo: shown straight away from the local file (with a spinner), uploaded in the background,
+  // then swapped for the saved message — or marked "Not sent".
+  const sendChatPhoto = async (file) => {
+    if (!file) return
+    setChatErr('')
+    setShowEmoji(false)
+    const tempId = `local-img-${Date.now()}`
+    const preview = URL.createObjectURL(file)
+    setChatLog((l) => [...l, { id: tempId, senderId: 'me', type: 'image', mediaUrl: preview, status: 'sending', at: Date.now() }])
+    const patch = (p) => setChatLog((l) => l.map((m) => (m.id === tempId ? { ...m, ...p } : m)))
+    try {
+      const res = await sendChatImage(hostId, file)
+      patch({ id: res.messageId || tempId, senderId: res.senderId, mediaUrl: res.mediaUrl || preview, status: 'sent' })
+    } catch (err) {
+      patch({ status: 'failed' })
+      setChatErr(err instanceof ApiError ? err.message : 'Could not send that photo.')
     }
   }
 
@@ -874,10 +913,14 @@ export default function CallRoom() {
                   scrollable
                   fadeOut={false}
                   scrollRef={chatFeedRef}
+                  onOpenImage={setViewingPhoto}
                   className="min-h-0 flex-1 px-4"
                   items={chatLog.map((m, i) => {
                     const fromHost = m.senderId && m.senderId === hostId
-                    return { id: m.id ?? `local-${i}`, at: m.at || 0, text: m.content ?? m.text, name: fromHost ? (c?.name || 'Host') : 'You', avatarId: fromHost ? hostId : 'me' }
+                    return {
+                      id: m.id ?? `local-${i}`, at: m.at || 0, text: m.content ?? m.text, name: fromHost ? (c?.name || 'Host') : 'You', avatarId: fromHost ? hostId : 'me',
+                      image: isImageMessage(m) ? m.mediaUrl : null, status: m.status,
+                    }
                   })}
                 />
               )}
@@ -906,6 +949,15 @@ export default function CallRoom() {
                   <Smile size={16} />
                 </button>
               </div>
+              <button
+                type="button"
+                onClick={() => chatFileRef.current?.click()}
+                className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-white/15 text-white backdrop-blur-sm"
+                aria-label="Send a photo"
+              >
+                <ImageIcon size={16} />
+              </button>
+              <input ref={chatFileRef} type="file" accept="image/*" className="hidden" onChange={(e) => { sendChatPhoto(e.target.files?.[0]); e.target.value = '' }} />
               <input
                 value={chatText}
                 onChange={(e) => setChatText(e.target.value)}
@@ -923,6 +975,15 @@ export default function CallRoom() {
           </div>
         )}
       </div>
+
+      {viewingPhoto && (
+        <div className="fixed inset-0 z-[80] grid place-items-center bg-black/95 p-4" onClick={() => setViewingPhoto(null)} role="dialog" aria-label="Photo">
+          <img src={viewingPhoto} alt="" className="max-h-full max-w-full rounded-lg object-contain" />
+          <button onClick={() => setViewingPhoto(null)} className="absolute right-4 top-[max(1rem,env(safe-area-inset-top))] grid h-10 w-10 place-items-center rounded-full bg-white/15 text-white" aria-label="Close">
+            <X size={18} />
+          </button>
+        </div>
+      )}
 
       {/* hidden while the chat is open — the floating chat takes over the bottom (with its own close) */}
       <div className={`absolute inset-x-0 bottom-0 z-30 bg-gradient-to-t from-black/80 via-black/40 to-transparent pt-14 transition-opacity duration-150 ${showChat ? 'pointer-events-none opacity-0' : ''}`}>

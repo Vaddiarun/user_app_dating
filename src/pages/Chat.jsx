@@ -12,6 +12,7 @@ import { chatApi, hostsApi, giftsApi, ApiError } from '../lib/api'
 import { normalizeHost } from '../lib/normalize'
 import { useHostAvatarUrl } from '../lib/hostGallery'
 import { useHostStatus } from '../lib/socket'
+import { isImageMessage } from '../lib/chatImage'
 
 // Verified against the live backend: GET /chat/conversations returns
 // { conversations: [{ id, userId, hostId, lastMessageAt, createdAt, otherParticipant: { id, name, phone, role } }] }
@@ -35,6 +36,7 @@ function normalizeMessage(m, viewerId) {
     id: m.id,
     mine: !!viewerId && m.senderId === viewerId,
     text: m.content || m.text || '',
+    image: isImageMessage(m) ? m.mediaUrl : null,
     ts: m.createdAt ? new Date(m.createdAt).getTime() : Date.now(),
   }
 }
@@ -291,6 +293,25 @@ function ConversationAvatar({ hostId, size }) {
 }
 
 function MessageBubble({ m }) {
+  const [open, setOpen] = useState(false)
+  if (m.image) {
+    return (
+      <div className={`flex ${m.mine ? 'justify-end' : 'justify-start'}`}>
+        <div className="max-w-[75%]">
+          <button type="button" onClick={() => setOpen(true)} className="block overflow-hidden rounded-2xl border border-black/5" aria-label="Open photo">
+            <img src={m.image} alt="" className="block max-h-64 max-w-[220px] object-cover" />
+          </button>
+          {m.text && <p className="mt-1 text-[14px] leading-snug">{m.text}</p>}
+          <p className={`mt-1 text-[10px] text-subtle ${m.mine ? 'text-right' : ''}`}>{timeOfDay(m.ts)}</p>
+        </div>
+        {open && (
+          <div className="fixed inset-0 z-[80] grid place-items-center bg-black/95 p-4" onClick={() => setOpen(false)} role="dialog" aria-label="Photo">
+            <img src={m.image} alt="" className="max-h-full max-w-full rounded-lg object-contain" />
+          </div>
+        )}
+      </div>
+    )
+  }
   return (
     <div className={`flex ${m.mine ? 'justify-end' : 'justify-start'}`}>
       <div className={`max-w-[75%] rounded-2xl px-3.5 py-2.5 ${m.mine ? 'bg-brand text-white' : 'bg-gray-100 text-ink dark:bg-white/10'}`}>

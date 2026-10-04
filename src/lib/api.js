@@ -240,6 +240,11 @@ export const callsApi = {
 /* ---------------- Chat ---------------- */
 export const chatApi = {
   send: (recipientId, content) => request('/chat/messages', { method: 'POST', body: { recipientId, content } }),
+  // Photos: presign → PUT to S3 → send a message that references the uploaded key. See lib/chatImage.js.
+  imageUploadUrl: (recipientId, contentType) =>
+    request('/chat/attachments/upload-url', { method: 'POST', body: { recipientId, contentType } }),
+  sendImage: (recipientId, mediaKey, caption = '') =>
+    request('/chat/messages', { method: 'POST', body: { recipientId, type: 'image', mediaKey, content: caption } }),
   conversations: () => request('/chat/conversations'),
   messages: (conversationId, page = 1, pageSize = 50) =>
     request(`/chat/conversations/${conversationId}/messages?page=${page}&pageSize=${pageSize}`),
