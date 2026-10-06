@@ -216,6 +216,12 @@ export const hostsApi = {
 }
 
 /* ---------------- Wallet & Recharge ---------------- */
+/* ---------------- Config ---------------- */
+// appSettings: admin-editable app values (live comment length, call-quality bands, ...).
+export const configApi = {
+  get: () => request('/config'),
+}
+
 export const walletApi = {
   get: () => request('/wallet'),
   devCredit: (amountPaise) => request('/wallet/dev-credit', { method: 'POST', body: { amountPaise } }),
@@ -289,7 +295,10 @@ export const moderationApi = {
   listBlocked: () => request('/moderation/blocks'),
   unblock: (userId) => request(`/moderation/blocks/${userId}`, { method: 'DELETE' }),
   report: (targetType, targetId, reason) => request('/moderation/reports', { method: 'POST', body: { targetType, targetId, reason } }),
-  captureEvent: (context, contextId) => request('/moderation/capture-event', { method: 'POST', body: { context, contextId } }),
+  // type: SCREENSHOT_ATTEMPT | SCREEN_RECORDING_SUSPECTED (count toward review) or PAGE_HIDDEN |
+  // DEVTOOLS_OPENED (logged for the admin Security Events screen only).
+  captureEvent: (context, contextId, type) =>
+    request('/moderation/capture-event', { method: 'POST', body: { context, contextId, ...(type ? { type } : {}) } }),
 }
 
 /* ---------------- Referrals ---------------- */
