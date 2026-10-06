@@ -518,6 +518,16 @@ export function Support() {
   ]
   return (
     <Sub title="Help & support">
+      <Card className="mb-4 p-4">
+        <div className="flex items-center gap-3">
+          <span className="grid h-12 w-12 place-items-center rounded-full bg-brand-50 text-brand dark:bg-brand/15"><Headphones size={20} /></span>
+          <div className="flex-1">
+            <p className="text-[16px] font-bold text-ink">Talk to us</p>
+            <p className="text-[12px] text-subtle">Message our support team</p>
+          </div>
+        </div>
+        <Button className="mt-3 w-full py-3" onClick={() => nav('/settings/support/chat')}>Start a chat</Button>
+      </Card>
       <Card className="divide-y divide-line">
         {rows.map((r, i) => (
           <button key={i} onClick={() => r[3] && nav(r[3])} className="flex w-full items-center gap-3 px-4 py-4 text-left hover:bg-gray-50 dark:hover:bg-white/5">

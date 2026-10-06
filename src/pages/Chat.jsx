@@ -33,12 +33,29 @@ function normalizeConversation(c) {
 // (passed in as viewerId), not any field on the message itself.
 function normalizeMessage(m, viewerId) {
   return {
-    id: m.id,
+    id: m.id || m.messageId,
     mine: !!viewerId && m.senderId === viewerId,
     text: m.content || m.text || '',
     image: isImageMessage(m) ? m.mediaUrl : null,
+    // A gift as a chat message, if the backend sends one ({ type: 'gift', gift: { name, iconUrl } }).
+    gift: m.type === 'gift' ? { name: m.gift?.name || m.giftName || 'Gift', iconUrl: m.gift?.iconUrl || null } : null,
     ts: m.createdAt ? new Date(m.createdAt).getTime() : Date.now(),
   }
+}
+
+/* Gifts sent from this chat, kept on this device so the gift card stays in the conversation.
+ * The messages endpoint only returns text, and the feed is reloaded every few seconds, so a
+ * card added only to `messages` would vanish on the next reload. */
+const SENT_GIFTS_KEY = 'vibe_chat_sent_gifts_v1' // { [hostId]: [{ id, name, iconUrl, pricePaise, ts }] }
+function loadSentGifts(hostId) {
+  try { return (JSON.parse(localStorage.getItem(SENT_GIFTS_KEY)) || {})[hostId] || [] } catch { return [] }
+}
+function saveSentGift(hostId, gift) {
+  try {
+    const all = JSON.parse(localStorage.getItem(SENT_GIFTS_KEY)) || {}
+    all[hostId] = [...(all[hostId] || []), gift].slice(-50)
+    localStorage.setItem(SENT_GIFTS_KEY, JSON.stringify(all))
+  } catch { /* storage unavailable — the card still shows until the page reloads */ }
 }
 
 export default function Chat() {
@@ -132,7 +149,19 @@ function Conversation({ hostId, conversationId: initialConvId }) {
   const [menu, setMenu] = useState(false)
   const [gift, setGift] = useState(false)
   const [call, setCall] = useState(false)
+  const [sentGifts, setSentGifts] = useState(() => loadSentGifts(hostId))
   const scrollRef = useRef(null)
+  useEffect(() => { setSentGifts(loadSentGifts(hostId)) }, [hostId])
+
+  // Server messages plus this device's sent-gift cards, in time order. A gift the server already
+  // returns as a message (same name, within a minute) isn't shown twice.
+  const feed = useMemo(() => {
+    const serverGifts = messages.filter((m) => m.gift)
+    const local = sentGifts
+      .filter((g) => !serverGifts.some((s) => s.mine && s.gift.name === g.name && Math.abs(s.ts - g.ts) < 60_000))
+      .map((g) => ({ id: g.id, mine: true, gift: { name: g.name, iconUrl: g.iconUrl, pricePaise: g.pricePaise }, ts: g.ts }))
+    return [...messages, ...local].sort((a, b) => a.ts - b.ts)
+  }, [messages, sentGifts])
 
   const blocked = state.blocked.some((b) => b.id === hostId)
   // The first gallery photo doubles as the profile pic wherever avatarUrl isn't set.
@@ -178,7 +207,7 @@ function Conversation({ hostId, conversationId: initialConvId }) {
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
-  }, [messages.length])
+  }, [feed.length])
 
   const send = async () => {
     const t = text.trim()
@@ -207,10 +236,25 @@ function Conversation({ hostId, conversationId: initialConvId }) {
 
   const sendGift = async (g) => {
     if (!state.wallet || state.wallet.balancePaise < g.pricePaise) { toast('Not enough balance', { tone: 'error' }); throw new Error('insufficient') }
-    await giftsApi.send(hostId, g.id, 'chat', conversationId)
-    await actions.refreshWallet()
+    // Chat gifts don't need a contextId — the backend uses the real conversation (creating it if
+    // needed) and returns the saved gift message as `chatMessage`.
+    const res = await giftsApi.send(hostId, g.id, 'chat')
+    // Stay in the conversation and show the gift in it, like WhatsApp/Instagram — no separate
+    // "gift sent" screen asking the user to go back to the chat.
+    if (res?.chatMessage) {
+      const msg = { ...normalizeMessage(res.chatMessage, state.user?.id), mine: true, pricePaise: g.pricePaise }
+      msg.gift = { ...msg.gift, pricePaise: g.pricePaise }
+      setMessages((list) => (list.some((m) => m.id === msg.id) ? list : [...list, msg]))
+      if (!conversationId && res.chatMessage.conversationId) setConversationId(res.chatMessage.conversationId)
+    } else {
+      // Older backend without chatMessage: keep the card on this device instead.
+      const sent = { id: `gift-${Date.now()}`, name: g.name, iconUrl: g.iconUrl || null, pricePaise: g.pricePaise, ts: Date.now() }
+      saveSentGift(hostId, sent)
+      setSentGifts((list) => [...list, sent])
+    }
     setGift(false)
-    nav(`/gift-sent/${hostId}?name=${encodeURIComponent(g.name)}`)
+    toast(`${g.name} sent to ${c?.name || 'the creator'}`)
+    actions.refreshWallet().catch(() => { })
   }
 
   return (
@@ -237,10 +281,10 @@ function Conversation({ hostId, conversationId: initialConvId }) {
         </div>
         {loading ? (
           <div className="grid place-items-center py-8"><Loader2 size={20} className="animate-spin text-subtle" /></div>
-        ) : messages.length === 0 ? (
+        ) : feed.length === 0 ? (
           <p className="py-6 text-center text-[13px] text-subtle">Say hi 👋 to start the conversation</p>
         ) : (
-          messages.map((m) => <MessageBubble key={m.id} m={m} />)
+          feed.map((m) => <MessageBubble key={m.id} m={m} />)
         )}
       </div>
 
@@ -294,6 +338,24 @@ function ConversationAvatar({ hostId, size }) {
 
 function MessageBubble({ m }) {
   const [open, setOpen] = useState(false)
+  if (m.gift) {
+    return (
+      <div className={`flex ${m.mine ? 'justify-end' : 'justify-start'}`}>
+        <div className="flex max-w-[78%] animate-fadeIn items-center gap-3 rounded-2xl border border-amber-200 bg-gradient-to-br from-amber-50 to-rose-50 px-3.5 py-3 dark:border-amber-400/30 dark:from-amber-400/10 dark:to-rose-400/10">
+          <span className="grid h-12 w-12 shrink-0 place-items-center rounded-xl bg-white shadow-sm dark:bg-white/10">
+            {m.gift.iconUrl ? <img src={m.gift.iconUrl} alt="" className="h-9 w-9 object-contain" /> : <Gift size={24} className="text-amber-500" />}
+          </span>
+          <div className="min-w-0">
+            <p className="text-[11px] font-bold uppercase tracking-wide text-amber-600 dark:text-amber-300">{m.mine ? 'Gift sent' : 'Gift'}</p>
+            <p className="text-[15px] font-bold text-ink">{m.gift.name}</p>
+            <p className="text-[10px] text-subtle">
+              {m.gift.pricePaise ? `₹${rupees(m.gift.pricePaise)} · ` : ''}{timeOfDay(m.ts)}
+            </p>
+          </div>
+        </div>
+      </div>
+    )
+  }
   if (m.image) {
     return (
       <div className={`flex ${m.mine ? 'justify-end' : 'justify-start'}`}>

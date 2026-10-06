@@ -141,6 +141,10 @@ export function Phone() {
   const [digits, setDigits] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  // Referral code: prefilled from an invite link (?ref=CODE) or typed in. Only counts for a new account.
+  const refFromLink = new URLSearchParams(window.location.search).get('ref') || ''
+  const [refOpen, setRefOpen] = useState(!!refFromLink)
+  const [refCode, setRefCode] = useState(refFromLink.toUpperCase())
 
   const submit = async () => {
     const clean = digits.replace(/\D/g, '')
@@ -150,7 +154,7 @@ export function Phone() {
     setError('')
     try {
       await authApi.requestOtp(phone)
-      nav('/onboarding/otp', { state: { phone } })
+      nav('/onboarding/otp', { state: { phone, referralCode: refCode.trim() || undefined } })
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not send code. Try again.')
     } finally {
@@ -176,6 +180,19 @@ export function Phone() {
         />
       </div>
       <ErrorText error={error} />
+      {refOpen ? (
+        <div className="mt-4">
+          <label className="block text-[13px] font-semibold text-ink">Referral code (optional)</label>
+          <input
+            value={refCode}
+            onChange={(e) => setRefCode(e.target.value.replace(/[^a-z0-9]/gi, '').toUpperCase().slice(0, 16))}
+            placeholder="e.g. K7P2XM9Q"
+            className="mt-2 w-full rounded-xl border border-line bg-canvas px-4 py-3 text-[15px] font-semibold tracking-[0.15em] outline-none focus:border-brand"
+          />
+        </div>
+      ) : (
+        <button type="button" onClick={() => setRefOpen(true)} className="mt-3 text-[13px] font-semibold text-brand">Have a referral code?</button>
+      )}
       <p className="mt-3 text-[13px] leading-relaxed text-subtle">We'll send a 6-digit code to confirm it's you. Standard rates may apply.</p>
       <Button className="mt-5 w-full py-3" onClick={submit} disabled={busy}>
         {busy ? <Loader2 size={16} className="animate-spin" /> : null} Send code
@@ -231,7 +248,7 @@ export function Otp() {
       // account this can never return or escalate into. It either logs
       // into this phone's own User account or creates one; either way the
       // result is always role "user".
-      const res = await authApi.verifyOtp(phone, code, 'user')
+      const res = await authApi.verifyOtp(phone, code, 'user', location.state?.referralCode)
       const restriction = getRestriction(res.user?.id)
       if (restriction) {
         nav('/account-restricted', { state: { caseRef: restriction.caseRef }, replace: true })

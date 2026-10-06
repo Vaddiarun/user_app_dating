@@ -19,6 +19,7 @@ import {
   EditProfile, BlockedCreators, Transactions, Talktime, LevelUp, Vip, Subscriptions,
   Languages, NotificationSettings, About, Support, Terms, Grievance, DeleteAccount,
 } from './pages/Settings'
+import { SupportChat, ReferAndEarn } from './pages/Account'
 import { CallEnded, CallSummary, GiftSent, BlockFlow, ReportFlow } from './pages/Outcomes'
 import { Splash, Phone, Otp, ProfileSetup, AccessConfirmed, BootScreen } from './pages/Auth'
 import { NotFound, Offline, SessionExpired, AccountRestricted, Logout } from './pages/Errors'
@@ -117,6 +118,8 @@ export default function App() {
           <Route path="/settings/notifications" element={<NotificationSettings />} />
           <Route path="/settings/about" element={<About />} />
           <Route path="/settings/support" element={<Support />} />
+          <Route path="/settings/support/chat" element={<SupportChat />} />
+          <Route path="/settings/refer" element={<ReferAndEarn />} />
           <Route path="/settings/terms" element={<Terms />} />
           <Route path="/settings/grievance" element={<Grievance />} />
           <Route path="/settings/delete" element={<DeleteAccount />} />

@@ -1,7 +1,7 @@
 import { useNavigate } from 'react-router-dom'
 import {
   User, UserX, Receipt, Wallet, TrendingUp, Crown, BadgeCheck, Globe,
-  Bell, Info, HelpCircle, UserMinus, LogOut, ChevronRight,
+  Bell, Info, HelpCircle, UserMinus, LogOut, ChevronRight, Gift, MessageCircle,
 } from 'lucide-react'
 import { useApp } from '../store/AppStore'
 import { Avatar, Card } from '../components/ui'
@@ -25,6 +25,7 @@ export default function Profile() {
         { icon: <Crown size={17} className="text-gold" />, t: 'VIP Subscription', s: u.isVipActive ? 'Active' : 'Unlock priority access', to: '/vip' },
         { icon: <BadgeCheck size={17} />, t: 'Active Subscriptions', s: u.isVipActive ? 'View' : 'None', to: '/settings/subscriptions' },
         { icon: <Globe size={17} />, t: 'Languages', s: (u.languages || []).join(', ') || 'Not set', to: '/settings/languages' },
+        { icon: <Gift size={17} />, t: 'Refer and earn', s: u.referralCode ? `Your code: ${u.referralCode}` : 'Invite friends', to: '/settings/refer' },
       ],
     },
     {
@@ -35,6 +36,7 @@ export default function Profile() {
       title: 'Support & about',
       rows: [
         { icon: <Info size={17} />, t: 'About Us', to: '/settings/about' },
+        { icon: <MessageCircle size={17} />, t: 'Chat with support', s: 'Message our team', to: '/settings/support/chat' },
         { icon: <HelpCircle size={17} />, t: 'Help & support', to: '/settings/support' },
         { icon: <UserMinus size={17} className="text-rose-500" />, t: 'Delete Account', to: '/settings/delete' },
         { icon: <LogOut size={17} className="text-rose-500" />, t: 'Log out', to: '/logout' },

@@ -176,7 +176,10 @@ export async function uploadToS3(uploadUrl, content, contentType) {
 /* ---------------- Auth ---------------- */
 export const authApi = {
   requestOtp: (phone) => request('/auth/otp/request', { method: 'POST', body: { phone }, auth: false }),
-  verifyOtp: (phone, code, role = 'user') => request('/auth/otp/verify', { method: 'POST', body: { phone, code, role }, auth: false }),
+  // referralCode: optional — only counts when this creates a NEW account; a wrong code never
+  // blocks signup (the response just has referralApplied: false).
+  verifyOtp: (phone, code, role = 'user', referralCode) =>
+    request('/auth/otp/verify', { method: 'POST', body: { phone, code, role, ...(referralCode ? { referralCode } : {}) }, auth: false }),
   refresh: () => refreshAccessToken(),
   logout: () => request('/auth/logout', { method: 'POST', body: { refreshToken: session.refreshToken } }),
 }
@@ -287,6 +290,19 @@ export const moderationApi = {
   unblock: (userId) => request(`/moderation/blocks/${userId}`, { method: 'DELETE' }),
   report: (targetType, targetId, reason) => request('/moderation/reports', { method: 'POST', body: { targetType, targetId, reason } }),
   captureEvent: (context, contextId) => request('/moderation/capture-event', { method: 'POST', body: { context, contextId } }),
+}
+
+/* ---------------- Referrals ---------------- */
+export const referralsApi = {
+  list: () => request('/me/referrals'),
+}
+
+/* ---------------- Support chat ---------------- */
+export const supportApi = {
+  listTickets: () => request('/me/support/tickets'),
+  createTicket: (data) => request('/me/support/tickets', { method: 'POST', body: data }),
+  getTicket: (id) => request(`/me/support/tickets/${id}`),
+  reply: (id, content) => request(`/me/support/tickets/${id}/messages`, { method: 'POST', body: { content } }),
 }
 
 /* ---------------- Grievance ---------------- */
