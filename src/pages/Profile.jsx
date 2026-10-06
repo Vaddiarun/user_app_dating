@@ -6,6 +6,7 @@ import {
 import { useApp } from '../store/AppStore'
 import { Avatar, Card } from '../components/ui'
 import { rupees, userName, userHandle } from '../lib/format'
+import SupportFab from '../components/SupportFab'
 
 export default function Profile() {
   const { state } = useApp()
@@ -87,6 +88,8 @@ export default function Profile() {
           </Card>
         </div>
       ))}
+      <div className="h-16 lg:h-0" />
+      <SupportFab />
     </div>
   )
 }

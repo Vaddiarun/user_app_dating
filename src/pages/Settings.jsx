@@ -11,6 +11,7 @@ import { openCashfreeCheckout, waitForSettlement } from '../lib/cashfree'
 import {
   meApi, vipApi, walletApi, grievanceApi, uploadToS3, ApiError,
 } from '../lib/api'
+import SupportFab from '../components/SupportFab'
 
 function Sub({ title, subtitle, children }) {
   const nav = useNavigate()
@@ -518,6 +519,7 @@ export function Support() {
   ]
   return (
     <Sub title="Help & support">
+      <SupportFab />
       <Card className="mb-4 p-4">
         <div className="flex items-center gap-3">
           <span className="grid h-12 w-12 place-items-center rounded-full bg-brand-50 text-brand dark:bg-brand/15"><Headphones size={20} /></span>
