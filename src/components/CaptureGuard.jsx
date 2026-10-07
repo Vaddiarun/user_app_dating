@@ -37,7 +37,7 @@ export default function CaptureGuard() {
     const onKeyDown = (e) => {
       if (e.key !== 'PrintScreen') return
       const ctx = contextFromPath(location.pathname)
-      if (ctx) moderationApi.captureEvent(ctx.context, ctx.contextId).catch(() => {})
+      if (ctx) moderationApi.captureEvent(ctx.context, ctx.contextId, 'SCREENSHOT_ATTEMPT').catch(() => {})
 
       const count = registerStrike(userId)
       if (count >= STRIKE_LIMIT) {

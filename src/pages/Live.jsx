@@ -5,7 +5,7 @@ import { useApp } from '../store/AppStore'
 import { Avatar, GradientBox, EmptyState } from '../components/ui'
 import { compact, userName } from '../lib/format'
 import GiftPicker from '../components/GiftPicker'
-import { liveApi, giftsApi, ApiError } from '../lib/api'
+import { liveApi, giftsApi, configApi, ApiError } from '../lib/api'
 import { joinAsAudience, leaveChannel, PLAY_CONFIG } from '../lib/agora'
 import { watchSfuBroadcast } from '../lib/sfu'
 import { getSocket, onSocketEvent } from '../lib/socket'
@@ -78,6 +78,11 @@ export function LiveRoom() {
   const [room, setRoom] = useState(null)
   const [msgs, setMsgs] = useState([])
   const [text, setText] = useState('')
+  // Admin-editable on the backend (GET /config → appSettings); 2000 until it loads.
+  const [commentMax, setCommentMax] = useState(2000)
+  useEffect(() => {
+    configApi.get().then((c) => setCommentMax(c?.appSettings?.liveCommentMaxLength ?? 2000)).catch(() => {})
+  }, [])
   const [hearts, setHearts] = useState([])
   const [gift, setGift] = useState(false)
   const [remoteJoined, setRemoteJoined] = useState(false)
@@ -317,6 +322,7 @@ export function LiveRoom() {
       <div className="absolute inset-x-0 bottom-0 z-10 flex items-center gap-2 p-3 pb-6">
         <input
           value={text}
+          maxLength={commentMax}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && sendChat()}
           placeholder="Say something…"
