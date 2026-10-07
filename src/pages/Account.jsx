@@ -48,6 +48,22 @@ export function SupportChat() {
   useEffect(load, []) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { bottomRef.current?.scrollIntoView({ block: 'end' }) }, [messages.length])
 
+
+  // Safety net next to the live socket event: re-check the open ticket every 5 seconds while the
+  // chat is on screen, so a reply always shows up without leaving and reopening the chat.
+  const sendingRef = useRef(false)
+  sendingRef.current = sending
+  useEffect(() => {
+    if (!ticket?.id) return
+    const t = setInterval(() => {
+      if (document.visibilityState !== 'visible' || sendingRef.current) return
+      supportApi.getTicket(ticket.id).then((res) => {
+        const next = res.messages || []
+        setMessages((cur) => (next.length !== cur.filter((m) => !String(m.id).startsWith('local-')).length ? next : cur))
+      }).catch(() => {})
+    }, 5000)
+    return () => clearInterval(t)
+  }, [ticket?.id])
   // Support's replies arrive live (socket event support:message → { ticketId, message }).
   useEffect(() => {
     let cancelled = false
