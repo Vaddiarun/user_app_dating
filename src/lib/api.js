@@ -311,7 +311,10 @@ export const supportApi = {
   listTickets: () => request('/me/support/tickets'),
   createTicket: (data) => request('/me/support/tickets', { method: 'POST', body: data }),
   getTicket: (id) => request(`/me/support/tickets/${id}`),
-  reply: (id, content) => request(`/me/support/tickets/${id}/messages`, { method: 'POST', body: { content } }),
+  // mediaKey: an attached photo, from attachmentUploadUrl + uploadToS3. Text is optional with a photo.
+  reply: (id, content, mediaKey) =>
+    request(`/me/support/tickets/${id}/messages`, { method: 'POST', body: { content, ...(mediaKey ? { mediaKey } : {}) } }),
+  attachmentUploadUrl: (contentType) => request('/me/support/attachments/upload-url', { method: 'POST', body: { contentType } }),
 }
 
 /* ---------------- Grievance ---------------- */

@@ -1,10 +1,11 @@
 /* Support chat and Refer & earn for users — the same backend features the Host app has. */
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { ChevronLeft, LifeBuoy, Send, Loader2, Gift, Copy, Check, Share2, Users } from 'lucide-react'
+import { ChevronLeft, LifeBuoy, Send, Loader2, Gift, Copy, Check, Share2, Users, ImagePlus } from 'lucide-react'
 import { useApp } from '../store/AppStore'
 import { Card, Button, EmptyState } from '../components/ui'
-import { supportApi, referralsApi, ApiError } from '../lib/api'
+import { supportApi, referralsApi, uploadToS3, ApiError } from '../lib/api'
+import { compressImage } from '../lib/chatImage'
 import { getSocket, onSocketEvent } from '../lib/socket'
 
 function Sub({ title, subtitle, back = '/profile', backLabel = 'Settings', children }) {
@@ -75,30 +76,48 @@ export function SupportChat() {
     return () => { cancelled = true; off() }
   }, [ticket])
 
-  const send = async (preset) => {
-    const content = (typeof preset === 'string' ? preset : text).trim()
-    if (!content || sending) return
+  // Sends text, a photo, or both (the typed text becomes the photo's caption). A photo is
+  // shrunk on the device, uploaded straight to storage, then sent with the key it was given.
+  // `preset` is a fixed message (the "Talk to a person" button) that leaves the input alone.
+  const send = async ({ preset, photo } = {}) => {
+    const content = (preset ?? text).trim()
+    if ((!content && !photo) || sending) return
     setSending(true)
     setError('')
-    if (typeof preset !== 'string') setText('')
-    setMessages((m) => [...m, { id: `local-${Date.now()}`, sender: 'user', content, createdAt: new Date().toISOString() }])
+    if (preset === undefined) setText('')
+    const previewUrl = photo ? URL.createObjectURL(photo) : null
+    setMessages((m) => [...m, {
+      id: `local-${Date.now()}`, sender: 'user', content,
+      attachments: previewUrl ? [{ type: 'image', url: previewUrl }] : [],
+      createdAt: new Date().toISOString(),
+    }])
     try {
+      let mediaKey
+      if (photo) {
+        const blob = await compressImage(photo)
+        const presign = await supportApi.attachmentUploadUrl(blob.type)
+        await uploadToS3(presign.uploadUrl, blob, blob.type)
+        mediaKey = presign.mediaKey
+      }
       if (ticket) {
-        await supportApi.reply(ticket.id, content)
+        await supportApi.reply(ticket.id, content, mediaKey)
         await openTicket(ticket.id)
       } else {
-        const created = await supportApi.createTicket({ subject: content.slice(0, 80), category: 'other', content })
+        const subject = content.slice(0, 80) || 'Photo attached'
+        const created = await supportApi.createTicket({ subject, category: 'other', content, mediaKey })
         await openTicket(created.ticket?.id || created.id)
       }
       setAwaitingReply(true)
     } catch (err) {
       setMessages((m) => m.filter((x) => !String(x.id).startsWith('local-')))
-      if (typeof preset !== 'string') setText(content)
+      if (preset === undefined) setText(content)
       setError(err instanceof ApiError ? err.message : 'Message not sent. Try again.')
     } finally {
       setSending(false)
+      if (previewUrl) URL.revokeObjectURL(previewUrl)
     }
   }
+  const photoInputRef = useRef(null)
 
   return (
     <Sub title="Support chat" subtitle="Our team replies here" back="/settings/support" backLabel="Help & support">
@@ -128,7 +147,12 @@ export function SupportChat() {
                           {bot && <span className="rounded-full bg-brand/10 px-1.5 py-px text-[9px] font-semibold uppercase tracking-wide text-brand">Automated</span>}
                         </span>
                       )}
-                      <span className="whitespace-pre-wrap">{m.content}</span>
+                      {(m.attachments || []).filter((a) => a.type === 'image').map((a, i) => (
+                        <a key={i} href={a.url} target="_blank" rel="noreferrer" className="mb-1 block">
+                          <img src={a.url} alt="Attached photo" className="max-h-56 max-w-full rounded-xl object-cover" />
+                        </a>
+                      ))}
+                      {m.content && <span className="whitespace-pre-wrap">{m.content}</span>}
                       <span className={`mt-1 block text-[10px] ${mine ? 'text-white/70' : 'text-subtle'}`}>{timeOf(m.createdAt)}</span>
                     </div>
                   </div>
@@ -152,7 +176,7 @@ export function SupportChat() {
             )}
             {ticket && !ticket.needsAgent && (
               <button
-                onClick={() => send('I’d like to talk to a person.')}
+                onClick={() => send({ preset: 'I’d like to talk to a person.' })}
                 disabled={sending}
                 className="mb-2 rounded-full border border-line px-3 py-1 text-[12px] font-medium text-subtle hover:border-brand-200 hover:text-ink disabled:opacity-40"
               >
@@ -161,6 +185,21 @@ export function SupportChat() {
             )}
             {error && <p className="mb-2 text-[12px] font-medium text-rose-500">{error}</p>}
             <div className="flex items-center gap-2">
+              <input
+                ref={photoInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => { send({ photo: e.target.files?.[0] }); e.target.value = '' }}
+              />
+              <button
+                onClick={() => photoInputRef.current?.click()}
+                disabled={sending}
+                className="grid h-10 w-10 shrink-0 place-items-center rounded-full border border-line text-subtle hover:text-ink disabled:opacity-40"
+                aria-label="Attach a photo"
+              >
+                <ImagePlus size={17} />
+              </button>
               <input
                 value={text}
                 onChange={(e) => setText(e.target.value.slice(0, 2000))}
