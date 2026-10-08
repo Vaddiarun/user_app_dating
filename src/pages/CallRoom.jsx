@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
   Mic, MicOff, MessageSquare, Gift, PhoneOff, X, AlertTriangle, Wallet, RotateCw, SwitchCamera, HeartHandshake, Send, Smile,
-  Video, VideoOff, Image as ImageIcon,
+  Video, VideoOff, ShieldAlert, Image as ImageIcon,
 } from 'lucide-react'
 import { useApp } from '../store/AppStore'
 import { Avatar, Button } from '../components/ui'
@@ -443,10 +443,15 @@ export default function CallRoom() {
       // 'video', so the caller's subscribed audio track was never actually
       // started. Subscribing alone doesn't play it; an explicit .play() call
       // is required, same as video.
+      // Camera off = video unpublished, mic muted = audio unpublished. Any published track
+      // means the host has connected, so camera-off shows "camera off", not "Connecting".
       if (left) {
         if (mediaType === 'video') setRemoteJoined(false)
+        if (mediaType === 'audio') setRemoteMuted(true)
         return
       }
+      setRemoteSeen(true)
+      if (mediaType === 'audio') setRemoteMuted(false)
       if (mediaType === 'video') {
         user.videoTrack?.play(remoteVideoRef.current)
         setRemoteJoined(true)
@@ -674,11 +679,14 @@ export default function CallRoom() {
   // a non-intrusive, honest notice (it doesn't claim capture is blocked, only
   // that identity is embedded in the video, which the watermark above makes true).
   const noticeShownRef = useRef(false)
+  const [captureNotice, setCaptureNotice] = useState(false)
   useEffect(() => {
     if (phase !== 'active' || noticeShownRef.current) return
     noticeShownRef.current = true
-    toast('Screen capture and recording are prohibited. Your identity is embedded in this video.', { duration: 4500 })
-  }, [phase]) // eslint-disable-line
+    setCaptureNotice(true)
+    const t = setTimeout(() => setCaptureNotice(false), 5000)
+    return () => clearTimeout(t)
+  }, [phase])
 
   // Page Visibility API: real and universal, but it only ever tells you the
   // tab was backgrounded — no mobile OS fires this for its screenshot or
@@ -786,6 +794,18 @@ export default function CallRoom() {
         ) : null}
         <button onClick={requestEnd} className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-black/35 backdrop-blur-md" aria-label="End call"><X size={16} /></button>
       </div>
+
+      {/* Screen-capture notice — once, when the call connects; closes by itself after 5 s. */}
+      {captureNotice && (
+        <div role="status" className="absolute inset-x-4 top-[calc(env(safe-area-inset-top)+5rem)] z-50 mx-auto flex max-w-sm animate-fadeIn items-center gap-3 rounded-2xl border border-white/15 bg-black/75 px-3.5 py-3 text-white shadow-2xl backdrop-blur-md">
+          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-amber-400/20 text-amber-300"><ShieldAlert size={18} /></span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-[13.5px] font-bold">Recording isn't allowed</span>
+            <span className="block text-[12px] leading-snug text-white/70">Screenshots and screen recordings of calls are blocked and logged.</span>
+          </span>
+          <button onClick={() => setCaptureNotice(false)} className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-white/10 text-white/80" aria-label="Dismiss"><X size={14} /></button>
+        </div>
+      )}
 
       {/* stage — fills the whole screen; header and controls float above it */}
       <div ref={stageRef} className="absolute inset-0 flex items-center justify-center">
