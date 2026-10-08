@@ -26,6 +26,9 @@ const timeOf = (iso) => (iso ? new Date(iso).toLocaleTimeString('en-IN', { hour:
 const dayOf = (iso) => (iso ? new Date(iso).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : '')
 
 /* ---- Support chat ---- */
+/** Closed by support — status may come as "closed"/"resolved" (any case) or just a closedAt time. */
+const isClosedTicket = (t) => !!t && (['closed', 'resolved'].includes(String(t.status || '').toLowerCase()) || !!t.closedAt)
+
 export function SupportChat() {
   const [state, setState] = useState('loading') // loading | ready | unavailable | error
   const [ticket, setTicket] = useState(null)
@@ -70,7 +73,7 @@ export function SupportChat() {
         const next = res.messages || []
         // Picks up support closing the ticket (status) or handing it to the team (needsAgent).
         const fresh = res.ticket || res
-        setTicket((cur) => (cur && (cur.needsAgent !== fresh.needsAgent || cur.status !== fresh.status) ? fresh : cur))
+        setTicket((cur) => (cur && (cur.needsAgent !== fresh.needsAgent || cur.status !== fresh.status || cur.closedAt !== fresh.closedAt) ? fresh : cur))
         setMessages((cur) => (next.length !== cur.filter((m) => !String(m.id).startsWith('local-')).length ? next : cur))
       }).catch(() => {})
     }, 5000)
@@ -119,6 +122,16 @@ export function SupportChat() {
         mediaKey = presign.mediaKey
       }
       if (ticket) {
+        // Support may have closed the chat since the last check — never write on (and so reopen)
+        // a closed ticket. Lock the chat instead and keep what was typed.
+        const latest = await supportApi.getTicket(ticket.id).catch(() => null)
+        const fresh = latest && (latest.ticket || latest)
+        if (fresh && isClosedTicket(fresh)) {
+          setTicket(fresh)
+          setMessages(latest.messages || [])
+          if (preset === undefined) setText(content)
+          return
+        }
         await supportApi.reply(ticket.id, content, mediaKey)
         await openTicket(ticket.id)
       } else {
@@ -139,7 +152,7 @@ export function SupportChat() {
   const photoInputRef = useRef(null)
   // A ticket support has closed is read-only. Writing again starts a NEW ticket (it doesn't
   // reopen the old one), so each issue stays its own conversation for the team.
-  const closed = ticket?.status === 'closed'
+  const closed = isClosedTicket(ticket)
   const startNewChat = () => { setTicket(null); setMessages([]); setAwaitingReply(false); setError('') }
 
   return (
