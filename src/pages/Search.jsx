@@ -5,6 +5,7 @@ import { useApp } from '../store/AppStore'
 import { Avatar, GradientBox, Button, EmptyState } from '../components/ui'
 import { hostsApi } from '../lib/api'
 import { normalizeHostList } from '../lib/normalize'
+import { useHostsByStatus } from '../lib/socket'
 
 const G = [['#e6b980', '#c9822b'], ['#8f7fe0', '#5b28d6'], ['#7fd6a8', '#3f9878'], ['#d68f9b', '#9b3f5f']]
 
@@ -33,7 +34,10 @@ export default function Search() {
     return () => clearTimeout(timer)
   }, [q])
 
-  const shown = results?.filter((c) => !state.blocked.some((b) => b.id === c.id)) ?? null
+  // Online hosts first, then in a call, then offline.
+  const sortedResults = useHostsByStatus(results?.filter((c) => !state.blocked.some((b) => b.id === c.id)) ?? [])
+  const shown = results ? sortedResults : null
+  const sortedSuggested = useHostsByStatus(suggested)
 
   return (
     <div className="mx-auto max-w-4xl">
@@ -54,7 +58,7 @@ export default function Search() {
         <>
           <Section title="Suggested">
             <div className="divide-y divide-line rounded-2xl border border-line bg-card">
-              {suggested.map((c) => (
+              {sortedSuggested.map((c) => (
                 <button key={c.id} onClick={() => nav(`/creator/${c.id}`)} className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-gray-50 dark:hover:bg-white/5">
                   <Avatar id={c.id} size={44} ring ringColor="#e0a0a0" />
                   <div className="flex-1">

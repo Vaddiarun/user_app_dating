@@ -7,7 +7,7 @@ import { hostsApi, meApi, ApiError } from '../lib/api'
 import { normalizeHostList } from '../lib/normalize'
 import { userName } from '../lib/format'
 import { useHostGallery } from '../lib/hostGallery'
-import { useHostStatus, useSocketConnected } from '../lib/socket'
+import { useHostStatus, useSocketConnected, useHostsByStatus } from '../lib/socket'
 
 const TABS = ['All', 'New', 'Popular', 'Following']
 const CARD_G = [
@@ -64,10 +64,12 @@ export default function Home() {
     return () => { alive = false }
   }, [socketConnected]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const list = useMemo(
+  const visible = useMemo(
     () => hosts.filter((c) => !state.blocked.some((b) => b.id === c.id)),
     [hosts, state.blocked],
   )
+  // Online hosts first, then in a call, then offline — kept up to date as hosts come and go.
+  const list = useHostsByStatus(visible)
 
   return (
     <div>

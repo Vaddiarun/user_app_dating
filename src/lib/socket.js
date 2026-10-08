@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from 'react'
+import { useMemo, useSyncExternalStore } from 'react'
 import { io } from 'socket.io-client'
 import { API_BASE_URL, getSession } from './api'
 
@@ -111,9 +111,28 @@ function subscribePresence(fn) {
  * arrives. Busy wins over online/offline: a host in a call can't take another one either way. */
 export function useHostStatus(hostId, host) {
   const presence = useSyncExternalStore(subscribePresence, () => livePresence)
+  return hostStatusFrom(presence, hostId, host)
+}
+
+function hostStatusFrom(presence, hostId, host) {
   const live = presence[hostId] || {}
   const busy = live.busy ?? host?.busy ?? false
   const online = live.online ?? host?.online ?? false
   if (busy) return 'busy'
   return online ? 'online' : 'offline'
+}
+
+const STATUS_ORDER = { online: 0, busy: 1, offline: 2 }
+
+/** `hosts` sorted online first, then busy (in a call), then offline — re-sorted live as presence
+ * changes. Within each group the original order (e.g. Popular's rating order) is kept. */
+export function useHostsByStatus(hosts) {
+  const presence = useSyncExternalStore(subscribePresence, () => livePresence)
+  return useMemo(
+    () => hosts
+      .map((h, i) => ({ h, i, rank: STATUS_ORDER[hostStatusFrom(presence, h.id, h)] }))
+      .sort((a, b) => a.rank - b.rank || a.i - b.i)
+      .map((x) => x.h),
+    [hosts, presence],
+  )
 }
