@@ -125,7 +125,6 @@ export default function CallRoom() {
   const [camErr, setCamErr] = useState('') // non-fatal — camera specifically failed, audio still works
   const [remoteJoined, setRemoteJoined] = useState(false) // host's video is on right now
   const [remoteSeen, setRemoteSeen] = useState(false) // host has connected at least once
-  const [remoteMuted, setRemoteMuted] = useState(false)
   const [remoteStream, setRemoteStream] = useState(null) // same host video, for the blurred backdrop
   const [camOn, setCamOn] = useState(true)
   const [unread, setUnread] = useState(0) // host messages that arrived while the chat was closed
@@ -447,11 +446,9 @@ export default function CallRoom() {
       // means the host has connected, so camera-off shows "camera off", not "Connecting".
       if (left) {
         if (mediaType === 'video') setRemoteJoined(false)
-        if (mediaType === 'audio') setRemoteMuted(true)
         return
       }
       setRemoteSeen(true)
-      if (mediaType === 'audio') setRemoteMuted(false)
       if (mediaType === 'video') {
         user.videoTrack?.play(remoteVideoRef.current)
         setRemoteJoined(true)
@@ -781,9 +778,6 @@ export default function CallRoom() {
           <p className="truncate text-[16px] font-semibold drop-shadow">{c?.name || '…'}</p>
           <p className="flex items-center gap-1.5 text-[12px] text-white/75">
             <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" /> {clock(seconds)}
-            {phase === 'active' && remoteSeen && remoteMuted && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-rose-500/80 px-1.5 py-px text-[10.5px] font-semibold text-white"><MicOff size={10} /> Muted</span>
-            )}
           </p>
         </div>
         </>) : <div className="flex-1" />}
