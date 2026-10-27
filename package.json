@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "agora-rtc-sdk-ng": "^4.24.8",
+    "firebase": "^11.10.0",
     "lucide-react": "^0.454.0",
     "pako": "^3.0.1",
     "react": "^18.3.1",

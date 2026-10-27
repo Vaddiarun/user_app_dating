@@ -1,6 +1,8 @@
 // Thin client for the TriloPlan User API (see TriloPlan-User.postman_collection.json).
 // Handles base URL, auth headers, and one silent access-token refresh on a 401.
 
+import { firebasePhoneAuthEnabled, sendPhoneCode, confirmPhoneCode } from './phoneAuth'
+
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000'
 
 const SESSION_KEY = 'vibe_session_v1'
@@ -174,12 +176,26 @@ export async function uploadToS3(uploadUrl, content, contentType) {
 }
 
 /* ---------------- Auth ---------------- */
+// Firebase errors aren't ApiErrors — rewrap them so the screens show the real reason.
+const asApiError = (e) => (e instanceof ApiError ? e : new ApiError(e?.message || 'Something went wrong. Try again.', 0, { code: e?.code }))
+
 export const authApi = {
-  requestOtp: (phone) => request('/auth/otp/request', { method: 'POST', body: { phone }, auth: false }),
+  // Once Firebase is configured (VITE_FIREBASE_*), Firebase sends the SMS; until then the backend's own OTP does.
+  requestOtp: async (phone) => {
+    if (!firebasePhoneAuthEnabled) return request('/auth/otp/request', { method: 'POST', body: { phone }, auth: false })
+    try { await sendPhoneCode(phone) } catch (e) { throw asApiError(e) }
+  },
   // referralCode: optional — only counts when this creates a NEW account; a wrong code never
-  // blocks signup (the response just has referralApplied: false).
-  verifyOtp: (phone, code, role = 'user', referralCode) =>
-    request('/auth/otp/verify', { method: 'POST', body: { phone, code, role, ...(referralCode ? { referralCode } : {}) }, auth: false }),
+  // blocks signup (the response just has referralApplied: false). Either path returns
+  // { accessToken, refreshToken, user }.
+  verifyOtp: async (phone, code, role = 'user', referralCode) => {
+    const extra = referralCode ? { referralCode } : {}
+    if (!firebasePhoneAuthEnabled) return request('/auth/otp/verify', { method: 'POST', body: { phone, code, role, ...extra }, auth: false })
+    let idToken
+    try { idToken = await confirmPhoneCode(code) } catch (e) { throw asApiError(e) }
+    // 503 "Firebase phone login isn't configured" until the backend has its Firebase settings.
+    return request('/auth/firebase/verify', { method: 'POST', body: { idToken, role, ...extra }, auth: false })
+  },
   refresh: () => refreshAccessToken(),
   logout: () => request('/auth/logout', { method: 'POST', body: { refreshToken: session.refreshToken } }),
 }
