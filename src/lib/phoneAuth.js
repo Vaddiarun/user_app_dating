@@ -5,7 +5,7 @@
  * Your apps → Web app) in VITE_FIREBASE_API_KEY / _AUTH_DOMAIN / _PROJECT_ID / _APP_ID. Until all
  * four are set, `firebasePhoneAuthEnabled` is false and login keeps using the old backend OTP. */
 import { initializeApp } from 'firebase/app'
-import { getAuth, RecaptchaVerifier, signInWithPhoneNumber, signOut } from 'firebase/auth'
+import { getAuth, RecaptchaVerifier, signInWithPhoneNumber, signOut, initializeRecaptchaConfig } from 'firebase/auth'
 
 const config = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -25,9 +25,17 @@ function firebaseAuth() {
   if (!auth) {
     auth = getAuth(initializeApp(config))
     auth.useDeviceLanguage()
+    // When phone sign-in uses reCAPTCHA Enterprise (Firebase → Authentication → Settings →
+    // reCAPTCHA), the check is score-based and invisible — no picture puzzles. Loading that config
+    // up front makes the first send use it; with Enterprise off this is a no-op and the v2
+    // verifier below is used as before.
+    initializeRecaptchaConfig(auth).catch(() => {})
   }
   return auth
 }
+
+// Start Firebase (and fetch its reCAPTCHA config) as the app opens, not on the first tap.
+if (firebasePhoneAuthEnabled && typeof window !== 'undefined') firebaseAuth()
 
 /** A brand-new invisible reCAPTCHA in a brand-new <div> for every send (and resend). Reusing a
  * node that once held a widget — after a failed send, a resend, or a dev hot-reload — throws
