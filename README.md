@@ -17,7 +17,7 @@ The app talks to the deployed backend at `https://triloapp-plan.onrender.com` by
 default (set in `.env`). It's a Render free-tier instance, so the first request
 after a period of inactivity can take 30–60s to cold-start. Point the app at a
 different backend (e.g. a local instance from the Postman collection) by editing
-`.env` or setting `VITE_API_BASE_URL` in your shell before running `npm run dev`.
+`.env` or setting `VIBE_API_BASE_URL` in your shell before running `npm run dev`.
 
 ## Backend integration
 

@@ -194,6 +194,11 @@ export function Phone() {
         <button type="button" onClick={() => setRefOpen(true)} className="mt-3 text-[13px] font-semibold text-brand">Have a referral code?</button>
       )}
       <p className="mt-3 text-[13px] leading-relaxed text-subtle">We'll send a 6-digit code to confirm it's you. Standard rates may apply.</p>
+      <p className="mt-2 text-[11px] leading-snug text-subtle">
+        This site is protected by reCAPTCHA and the Google{' '}
+        <a href="https://policies.google.com/privacy" target="_blank" rel="noreferrer" className="underline">Privacy Policy</a> and{' '}
+        <a href="https://policies.google.com/terms" target="_blank" rel="noreferrer" className="underline">Terms of Service</a> apply.
+      </p>
       <Button className="mt-5 w-full py-3" onClick={submit} disabled={busy}>
         {busy ? <Loader2 size={16} className="animate-spin" /> : null} Send code
       </Button>

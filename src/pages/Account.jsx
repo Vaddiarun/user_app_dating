@@ -287,7 +287,9 @@ export function ReferAndEarn() {
   useEffect(() => {
     referralsApi.list()
       .then((res) => setList(res.referrals || []))
-      .catch((err) => (err instanceof ApiError && err.status === 404 ? setList([]) : setError('Could not load your referrals.')))
+      // 404 = not built yet, 403 = the backend keeps referral lists to hosts for now — either way
+      // there's nothing to show, which isn't an error for the user.
+      .catch((err) => (err instanceof ApiError && (err.status === 404 || err.status === 403) ? setList([]) : setError('Could not load your referrals.')))
   }, [])
 
   const link = code ? `${window.location.origin}/onboarding/phone?ref=${encodeURIComponent(code)}` : ''

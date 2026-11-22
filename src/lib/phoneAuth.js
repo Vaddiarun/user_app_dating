@@ -2,16 +2,16 @@
  * ever sees the Firebase ID token it gets back (POST /auth/firebase/verify), never the code.
  *
  * Configured with the TriloPlan Firebase project's web app config (Project settings → General →
- * Your apps → Web app) in VITE_FIREBASE_API_KEY / _AUTH_DOMAIN / _PROJECT_ID / _APP_ID. Until all
+ * Your apps → Web app) in VIBE_FIREBASE_API_KEY / _AUTH_DOMAIN / _PROJECT_ID / _APP_ID. Until all
  * four are set, `firebasePhoneAuthEnabled` is false and login keeps using the old backend OTP. */
 import { initializeApp } from 'firebase/app'
 import { getAuth, RecaptchaVerifier, signInWithPhoneNumber, signOut, initializeRecaptchaConfig } from 'firebase/auth'
 
 const config = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID,
+  apiKey: import.meta.env.VIBE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VIBE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VIBE_FIREBASE_PROJECT_ID,
+  appId: import.meta.env.VIBE_FIREBASE_APP_ID,
 }
 
 export const firebasePhoneAuthEnabled = Object.values(config).every(Boolean)
@@ -71,6 +71,12 @@ const MESSAGES = {
   'auth/code-expired': 'That code has expired. Tap “Resend code” for a new one.',
   'auth/session-expired': 'That code has expired. Tap “Resend code” for a new one.',
   'auth/network-request-failed': 'No connection. Check your internet and try again.',
+  // reCAPTCHA Enterprise (score-based) rejections — usually a low "is this a human" score.
+  'auth/invalid-recaptcha-token': 'We couldn’t confirm this request came from a person. Close other tabs/VPN, reload and try once more.',
+  'auth/missing-recaptcha-token': 'Security check didn’t load. Reload the page and try again.',
+  'auth/invalid-recaptcha-action': 'Security check failed. Reload the page and try again.',
+  'auth/invalid-recaptcha-version': 'Security check failed. Reload the page and try again.',
+  'auth/recaptcha-not-enabled': 'Phone login security isn’t set up yet (Firebase → Authentication → reCAPTCHA).',
 }
 
 /** A readable message for a Firebase error (or anything else thrown along the way). */

@@ -72,3 +72,8 @@ body {
     object-fit: cover !important;
   }
 }
+
+/* Firebase phone login's reCAPTCHA badge sat bottom-right on every screen, over the bottom tab
+ * bar. Google allows hiding it when the login screen shows the reCAPTCHA notice instead (see the
+ * phone-number screen). */
+.grecaptcha-badge { visibility: hidden !important; }

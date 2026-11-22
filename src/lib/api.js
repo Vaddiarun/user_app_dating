@@ -3,7 +3,7 @@
 
 import { firebasePhoneAuthEnabled, sendPhoneCode, confirmPhoneCode } from './phoneAuth'
 
-export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000'
+export const API_BASE_URL = import.meta.env.VIBE_API_BASE_URL || 'http://localhost:4000'
 
 const SESSION_KEY = 'vibe_session_v1'
 
@@ -180,7 +180,7 @@ export async function uploadToS3(uploadUrl, content, contentType) {
 const asApiError = (e) => (e instanceof ApiError ? e : new ApiError(e?.message || 'Something went wrong. Try again.', 0, { code: e?.code }))
 
 export const authApi = {
-  // Once Firebase is configured (VITE_FIREBASE_*), Firebase sends the SMS; until then the backend's own OTP does.
+  // Once Firebase is configured (VIBE_FIREBASE_*), Firebase sends the SMS; until then the backend's own OTP does.
   requestOtp: async (phone) => {
     if (!firebasePhoneAuthEnabled) return request('/auth/otp/request', { method: 'POST', body: { phone }, auth: false })
     try { await sendPhoneCode(phone) } catch (e) { throw asApiError(e) }

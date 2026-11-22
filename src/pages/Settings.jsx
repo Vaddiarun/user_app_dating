@@ -12,6 +12,7 @@ import {
   meApi, vipApi, walletApi, grievanceApi, uploadToS3, ApiError,
 } from '../lib/api'
 import SupportFab from '../components/SupportFab'
+import PaymentSuccess from '../components/PaymentSuccess'
 
 function Sub({ title, subtitle, children }) {
   const nav = useNavigate()
@@ -220,7 +221,7 @@ export function Talktime() {
       <p className="mt-5 text-[12px] font-bold uppercase tracking-wide text-subtle">Talktime recharge</p>
       <div className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-3">
         {packages.map((p) => (
-          <button key={p.id} onClick={() => nav(`/add-balance?pkg=${p.id}`)} className="rounded-xl border border-line p-3 text-center hover:border-brand-200">
+          <button key={p.id} onClick={() => nav(`/add-balance?pkg=${p.id}`, { state: { returnTo: '/settings/talktime', returnLabel: 'Talktime' } })} className="rounded-xl border border-line p-3 text-center hover:border-brand-200">
             <p className="text-[14px] font-bold text-ink">₹{rupees(p.pricePaise)}</p>
             {p.mrpPaise > p.pricePaise && <p className="text-[11px] text-subtle line-through">₹{rupees(p.mrpPaise)}</p>}
             <p className="mt-1 rounded-md bg-brand py-1 text-[12px] font-bold text-white">Recharge</p>
@@ -256,6 +257,7 @@ export function Vip() {
   const [plans, setPlans] = useState(null)
   const [plan, setPlan] = useState(null)
   const [busy, setBusy] = useState(false)
+  const [activated, setActivated] = useState(false) // VIP confirmed by the backend
   const benefits = [
     [<Percent size={16} />, 'VIP Rate', 'Discount on all audio and video calls'],
     [<Radio size={16} />, 'VIP Access', 'Unlimited live streams and chats'],
@@ -269,8 +271,7 @@ export function Vip() {
     const purchase = await waitForSettlement(() => vipApi.purchaseStatus(purchaseId))
     if (purchase.status === 'success') {
       await actions.refreshUser()
-      toast('Welcome to VIP 👑')
-      nav('/profile')
+      setActivated(true)
     } else if (purchase.status === 'failed') {
       toast('Payment failed — VIP was not activated', { tone: 'error' })
     } else {
@@ -308,6 +309,18 @@ export function Vip() {
     } finally {
       setBusy(false)
     }
+  }
+
+
+  if (activated) {
+    return (
+      <PaymentSuccess
+        title="Welcome to VIP 👑"
+        subtitle="Your VIP plan is active. Discounted calls and all VIP perks are on."
+        to="/profile"
+        label="your profile"
+      />
+    )
   }
 
   return (

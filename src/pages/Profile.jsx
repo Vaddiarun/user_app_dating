@@ -7,6 +7,7 @@ import { useApp } from '../store/AppStore'
 import { Avatar, Card } from '../components/ui'
 import { rupees, userName, userHandle } from '../lib/format'
 import SupportFab from '../components/SupportFab'
+import { InstallAppCard } from '../components/InstallApp'
 
 export default function Profile() {
   const { state } = useApp()
@@ -66,6 +67,8 @@ export default function Profile() {
         </div>
         <button onClick={() => nav('/settings/edit-profile')} className="rounded-lg border border-brand px-3 py-1.5 text-[12px] font-semibold text-brand">Edit</button>
       </Card>
+
+      <InstallAppCard className="mt-4" />
 
       {groups.map((g) => (
         <div key={g.title} className="mt-5">

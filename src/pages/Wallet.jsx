@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import {
-  Plus, Check, X, RotateCw, CreditCard, Wallet as WalletIcon, Loader2,
+  Plus, X, RotateCw, CreditCard, Wallet as WalletIcon, Loader2,
 } from 'lucide-react'
 import { useApp } from '../store/AppStore'
 import { Button, Card, EmptyState } from '../components/ui'
 import { rupees } from '../lib/format'
 import { walletApi, ApiError } from '../lib/api'
 import { openCashfreeCheckout, waitForSettlement } from '../lib/cashfree'
+import PaymentSuccess from '../components/PaymentSuccess'
 
 export default function Wallet() {
   const { state } = useApp()
@@ -66,10 +67,32 @@ export default function Wallet() {
   )
 }
 
+// Where to go after a successful top-up. Screens that open Add balance pass
+// { state: { returnTo, returnLabel } } (e.g. back to the creator whose call ran out of money).
+// Kept in sessionStorage too, because desktop checkout leaves the page and comes back.
+const RETURN_KEY = 'vibe_recharge_return'
+const DEFAULT_RETURN = { to: '/wallet', label: 'your wallet' }
+function readReturn() {
+  try { return JSON.parse(sessionStorage.getItem(RETURN_KEY)) || DEFAULT_RETURN } catch { return DEFAULT_RETURN }
+}
+
 export function AddBalance() {
   const { state, actions, toast } = useApp()
   const nav = useNavigate()
+  const location = useLocation()
   const [sp] = useSearchParams()
+  const [returnTo] = useState(() => {
+    const from = location.state?.returnTo
+    if (from) {
+      const r = { to: from, label: location.state?.returnLabel || 'where you were' }
+      try { sessionStorage.setItem(RETURN_KEY, JSON.stringify(r)) } catch { /* private mode */ }
+      return r
+    }
+    // Fresh visit (not back from checkout) with no return target: forget any old one.
+    if (!sp.get('recharge_id')) { try { sessionStorage.removeItem(RETURN_KEY) } catch { /* ignore */ } }
+    return readReturn()
+  })
+  const [added, setAdded] = useState(null) // amountPaise of the confirmed recharge
   const [packages, setPackages] = useState(null)
   const [pack, setPack] = useState(null)
   const [phase, setPhase] = useState('form') // form | processing | done | failed
@@ -79,6 +102,7 @@ export function AddBalance() {
   const finish = async (txnId) => {
     const txn = await waitForSettlement(() => walletApi.rechargeStatus(txnId))
     if (txn.status === 'success') {
+      setAdded(txn.amountPaise ?? null)
       await actions.refreshWallet()
       if (state.notifPrefs?.wallet) actions.addNotification({ kind: 'wallet', title: 'Balance added', body: `Recharge of ₹${rupees(txn.amountPaise)} confirmed` })
       setPhase('done')
@@ -143,18 +167,17 @@ export function AddBalance() {
 
   if (phase === 'done') {
     return (
-      <Centered>
-        <span className="relative grid h-24 w-24 place-items-center">
-          <span className="absolute inset-0 rounded-full bg-green-500/20" />
-          <span className="grid h-14 w-14 place-items-center rounded-full bg-green-600 text-white"><Check size={26} /></span>
-        </span>
-        <h1 className="mt-4 text-[20px] font-bold text-ink">Balance added</h1>
+      <PaymentSuccess
+        title="Payment successful"
+        subtitle={added != null ? `₹${rupees(added)} has been added to your balance.` : 'Your balance has been topped up.'}
+        to={returnTo.to}
+        label={returnTo.label}
+      >
         <Card className="mt-5 w-full p-4 text-center">
           <p className="text-[13px] text-subtle">New balance</p>
           <p className="mt-1 text-[24px] font-extrabold text-gold">₹{rupees(state.wallet?.balancePaise)}</p>
         </Card>
-        <Button className="mt-4 w-full py-3" onClick={() => nav('/wallet')}>Back to wallet</Button>
-      </Centered>
+      </PaymentSuccess>
     )
   }
 

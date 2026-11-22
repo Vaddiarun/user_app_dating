@@ -94,7 +94,7 @@ export function CallEnded() {
         <Row k="Amount spent" v={<span className="text-gold">₹{rupees(+sp.get('amt') || 0)}</span>} />
       </Card>
       {reason === END_REASONS.balance ? (
-        <Button variant="gold" className="mt-4 w-full py-3" onClick={() => nav('/add-balance')}><Plus size={16} /> Add balance</Button>
+        <Button variant="gold" className="mt-4 w-full py-3" onClick={() => nav('/add-balance', { state: { returnTo: `/creator/${id}`, returnLabel: c?.name || 'the creator' } })}><Plus size={16} /> Add balance</Button>
       ) : (
         <Button className="mt-4 w-full py-3" onClick={() => nav(`/call/${id}?mode=video`)}><Video size={16} /> Call again</Button>
       )}
@@ -142,7 +142,7 @@ export function CallSummary() {
           </div>
         </Card>
       )}
-      <Button variant="gold" className="mt-4 w-full py-3" onClick={() => nav('/add-balance')}><Plus size={16} /> Add balance</Button>
+      <Button variant="gold" className="mt-4 w-full py-3" onClick={() => nav('/add-balance', { state: { returnTo: `/creator/${id}`, returnLabel: c?.name || 'the creator' } })}><Plus size={16} /> Add balance</Button>
       <Button variant="outline" className="mt-3 w-full py-3" onClick={() => nav(`/chat/${id}`)}><MessageSquare size={16} /> Message {c?.name || ''}</Button>
       <button onClick={() => nav('/')} className="mt-4 text-[14px] font-semibold text-brand">Back to home</button>
     </Centered>

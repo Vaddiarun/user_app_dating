@@ -310,11 +310,11 @@ export default function CallRoom() {
       // it connected" — map them onto CallEnded's reason keys.
       const endReason = reason === 'timeout' ? 'missed' : reason === 'balance' ? 'balance' : 'cancelled'
       const dest = reason === 'addbalance'
-        ? '/add-balance'
+        ? '/add-balance' // the creator to come back to is passed in the navigate state below
         : reason === 'balance' || !wasActive
           ? `/call-ended/${hostId}${q}&reason=${endReason}`
           : `/call-summary/${hostId}${q}`
-      navRef.current(dest, { replace: true })
+      navRef.current(dest, { replace: true, ...(reason === 'addbalance' ? { state: { returnTo: `/creator/${hostId}`, returnLabel: 'the creator' } } : {}) })
     } catch {
       navRef.current('/', { replace: true })
     }
@@ -743,7 +743,7 @@ export default function CallRoom() {
           </p>
           <div className="mt-5 flex flex-col gap-2.5">
             {isBalance ? (
-              <Button variant="gold" className="w-full py-3" onClick={() => nav('/add-balance')}>
+              <Button variant="gold" className="w-full py-3" onClick={() => nav('/add-balance', { state: { returnTo: `/creator/${hostId}`, returnLabel: 'the creator' } })}>
                 <Wallet size={15} /> Add balance
               </Button>
             ) : (

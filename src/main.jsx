@@ -4,6 +4,11 @@ import { BrowserRouter } from 'react-router-dom'
 import App from './App.jsx'
 import { AppProvider } from './store/AppStore.jsx'
 import './index.css'
+import { registerServiceWorker } from './lib/pwa'
+
+// Installable app: listens for the browser's install prompt (lib/pwa.js) and registers the
+// service worker in production builds.
+registerServiceWorker()
 
 // After a new deploy, a tab left open from before it still holds an old
 // index.html that references old, now-deleted chunk hashes (Agora's SDK is

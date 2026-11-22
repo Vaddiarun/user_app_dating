@@ -23,6 +23,7 @@ import { SupportChat, ReferAndEarn } from './pages/Account'
 import { CallEnded, CallSummary, GiftSent, BlockFlow, ReportFlow } from './pages/Outcomes'
 import { Splash, Phone, Otp, ProfileSetup, AccessConfirmed, BootScreen } from './pages/Auth'
 import { NotFound, Offline, SessionExpired, AccountRestricted, Logout } from './pages/Errors'
+import DownloadPage from './components/InstallApp'
 
 function Shell() {
   const { pathname } = useLocation()
@@ -80,6 +81,8 @@ export default function App() {
         </Route>
 
         <Route path="/session-expired" element={<SessionExpired />} />
+        {/* public: shareable "get the app" page (install as app / download APK) */}
+        <Route path="/download" element={<DownloadPage />} />
         <Route path="/account-restricted" element={<AccountRestricted />} />
 
         {/* authenticated-only */}
