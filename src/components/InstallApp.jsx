@@ -70,6 +70,19 @@ export function InstallAppCard({ className = '', always = false }) {
   )
 }
 
+// Small "Get the app" button for the login screen: opens the install dialog where the browser
+// offers one, otherwise the /download page (iPhone steps, APK, instructions). Hidden in the app.
+export function InstallAppButton({ className = '' }) {
+  const { canInstall, installed, install } = useInstallPrompt()
+  if (installed) return null
+  const cls = `flex w-full items-center justify-center gap-2 rounded-xl border border-brand-200 bg-brand-50 py-3 text-[14px] font-semibold text-brand dark:border-white/10 dark:bg-brand/15 ${className}`
+  return canInstall ? (
+    <button type="button" onClick={install} className={cls}><Download size={16} /> Install the Vibe app</button>
+  ) : (
+    <a href="/download" className={cls}><Download size={16} /> Get the Vibe app</a>
+  )
+}
+
 // Public, shareable page: vibe-site/download — works without logging in.
 export default function DownloadPage() {
   return (

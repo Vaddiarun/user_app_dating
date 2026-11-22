@@ -6,6 +6,7 @@ import { Avatar } from '../components/ui'
 import { useApp } from '../store/AppStore'
 import { authApi, meApi, ApiError } from '../lib/api'
 import { getRestriction } from '../lib/captureStrikes'
+import { InstallAppButton } from '../components/InstallApp'
 
 const STEP_LABELS = ['Phone', 'Verify', 'Profile', 'Access']
 
@@ -202,6 +203,7 @@ export function Phone() {
       <Button className="mt-5 w-full py-3" onClick={submit} disabled={busy}>
         {busy ? <Loader2 size={16} className="animate-spin" /> : null} Send code
       </Button>
+      <InstallAppButton className="mt-3" />
     </Page>
   )
 }
