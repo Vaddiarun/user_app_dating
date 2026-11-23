@@ -30,7 +30,9 @@ jobs:
       - run: npm ci
 
       # Production settings. None of these are secret: they end up in the
-      # public JavaScript bundle anyway.
+      # public JavaScript bundle anyway. Both name styles are set (VITE_ is
+      # Vite's default, VIBE_ is used when vite.config sets envPrefix) so a
+      # rename in the code can't silently fall back to the dev values in .env.
       - name: Build
         run: npm run build
         env:
@@ -39,6 +41,15 @@ jobs:
           VITE_FIREBASE_AUTH_DOMAIN: triloplan.firebaseapp.com
           VITE_FIREBASE_PROJECT_ID: triloplan
           VITE_FIREBASE_APP_ID: "1:112826184330:web:151be3b1fcb2cefefef373"
+          VIBE_API_BASE_URL: https://api.trilo.win
+          VIBE_FIREBASE_API_KEY: AIzaSyCoSyd_96yma8MfvWVlBamm9ulipVCqVHI
+          VIBE_FIREBASE_AUTH_DOMAIN: triloplan.firebaseapp.com
+          VIBE_FIREBASE_PROJECT_ID: triloplan
+          VIBE_FIREBASE_APP_ID: "1:112826184330:web:151be3b1fcb2cefefef373"
+
+      # Stop before publishing if the bundle doesn't call the prod API.
+      - name: Check the build uses the prod API
+        run: grep -rq "api.trilo.win" dist/assets || { echo "Build does not contain https://api.trilo.win - check the API env variable name"; exit 1; }
 
       - name: Publish to Cloudflare Pages
         run: npx --yes wrangler@4 pages deploy dist --project-name triloplan-app --branch main --commit-hash ${{ github.sha }}
